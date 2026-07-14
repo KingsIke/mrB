@@ -76,6 +76,7 @@ export class AuthController {
       [
         { name: 'profilePicture', maxCount: 1 },
         { name: 'schoolIdCard', maxCount: 1 },
+        { name: 'administrationLetter', maxCount: 1 },
       ],
       {
         storage: memoryStorage(),
@@ -105,11 +106,13 @@ export class AuthController {
     files: {
       profilePicture?: Express.Multer.File[];
       schoolIdCard?: Express.Multer.File[];
+      administrationLetter?: Express.Multer.File[];
     },
   ) {
     return this.authService.completeOnboarding(userId, dto, {
       profilePicture: files?.profilePicture?.[0],
       schoolIdCard: files?.schoolIdCard?.[0],
+      administrationLetter: files?.administrationLetter?.[0],
     });
   }
 
