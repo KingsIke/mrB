@@ -97,6 +97,9 @@ export class User {
   @Column({ type: 'varchar', length: 255, nullable: true })
   schoolIdCardUrl: string;
 
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  administrationLetterUrl: string;
+
   // === Terms ===
   @Column({ type: 'boolean', default: false })
   termsAccepted: boolean;

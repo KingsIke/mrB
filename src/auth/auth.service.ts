@@ -128,7 +128,10 @@ export class AuthService {
 
     // Check if email is verified
     if (!user.isEmailVerified) {
-      throw new UnauthorizedException('Please verify your email before logging in');
+      await this.otpService.generateAndSendOtp(user);
+      throw new UnauthorizedException(
+        'Please verify your email before logging in. A new OTP has been sent to your email.',
+      );
     }
 
     // Check onboarding status
@@ -157,7 +160,11 @@ export class AuthService {
   async completeOnboarding(
     userId: string,
     dto: CompleteOnboardingDto,
-    files?: { profilePicture?: Express.Multer.File; schoolIdCard?: Express.Multer.File },
+    files?: {
+      profilePicture?: Express.Multer.File;
+      schoolIdCard?: Express.Multer.File;
+      administrationLetter?: Express.Multer.File;
+    },
   ): Promise<{ message: string; user: Partial<User> }> {
     const user = await this.usersService.findById(userId);
     if (!user) {
@@ -181,6 +188,7 @@ export class AuthService {
     // Handle file uploads
     let profilePictureUrl = user.profilePictureUrl;
     let schoolIdCardUrl = user.schoolIdCardUrl;
+    let administrationLetterUrl = user.administrationLetterUrl;
 
     if (files?.profilePicture) {
       const result = await this.cloudinaryService.uploadFile(files.profilePicture, {
@@ -195,6 +203,13 @@ export class AuthService {
         resourceType: 'image',
       });
       schoolIdCardUrl = result.secure_url;
+    }
+    if (files?.administrationLetter) {
+      const result = await this.cloudinaryService.uploadFile(files.administrationLetter, {
+        folder: 'school-social/administration-letters',
+        resourceType: 'image',
+      });
+      administrationLetterUrl = result.secure_url;
     }
 
     // Update user with all onboarding data
@@ -212,6 +227,7 @@ export class AuthService {
       phoneNumber: dto.phoneNumber,
       profilePictureUrl,
       schoolIdCardUrl,
+      administrationLetterUrl,
       termsAccepted: true,
       termsAcceptedAt: new Date(),
       status: UserStatus.ACTIVE,
@@ -269,6 +285,7 @@ export class AuthService {
     if (!user.termsAccepted) missingFields.push('termsAccepted');
     if (!user.profilePictureUrl) missingFields.push('profilePicture');
     if (!user.schoolIdCardUrl) missingFields.push('schoolIdCard');
+    if (!user.administrationLetterUrl) missingFields.push('administrationLetter');
     if (!user.matricNumber && !user.jambNumber) missingFields.push('matricNumber or jambNumber');
 
     return {
