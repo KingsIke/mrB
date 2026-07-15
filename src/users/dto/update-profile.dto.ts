@@ -53,17 +53,15 @@ export class UpdateProfileDto {
   @IsUUID()
   schoolId?: string;
 
-  @ApiPropertyOptional({ description: 'Faculty', example: 'Engineering' })
+  @ApiPropertyOptional({ description: 'Faculty ID', example: '550e8400-e29b-41d4-a716-446655440001' })
   @IsOptional()
-  @IsString()
-  @MaxLength(255)
-  faculty?: string;
+  @IsUUID()
+  facultyId?: string;
 
-  @ApiPropertyOptional({ description: 'Department', example: 'Computer Science' })
+  @ApiPropertyOptional({ description: 'Department ID', example: '550e8400-e29b-41d4-a716-446655440002' })
   @IsOptional()
-  @IsString()
-  @MaxLength(255)
-  department?: string;
+  @IsUUID()
+  departmentId?: string;
 
   @ApiPropertyOptional({ description: 'Matric number', example: 'ENG/2020/001' })
   @IsOptional()

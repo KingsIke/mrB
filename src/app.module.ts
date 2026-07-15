@@ -8,6 +8,8 @@ import { UsersModule } from './users/users.module';
 import { OtpModule } from './otp/otp.module';
 import { SchoolsModule } from './schools/schools.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
+import { FacultiesModule } from './faculties/faculties.module';
+import { DepartmentsModule } from './departments/departments.module';
 
 @Module({
   imports: [
@@ -33,6 +35,8 @@ import { CloudinaryModule } from './cloudinary/cloudinary.module';
     UsersModule,
     OtpModule,
     SchoolsModule,
+    FacultiesModule,
+    DepartmentsModule,
   ],
 })
 export class AppModule {}

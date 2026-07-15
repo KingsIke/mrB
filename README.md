@@ -107,7 +107,15 @@ Content-Type: application/json
 }
 ```
 
-### 4. Complete Onboarding
+### 4. Look Up School, Faculty & Department
+Faculty and department are proper related records, scoped to the chosen school — look them up before submitting onboarding:
+```http
+GET /v1/schools
+GET /v1/faculties?schoolId=<school-uuid>
+GET /v1/departments?facultyId=<faculty-uuid>
+```
+
+### 5. Complete Onboarding
 ```http
 POST /v1/auth/onboarding
 Authorization: Bearer <access_token>
@@ -118,8 +126,8 @@ lastName: Doe
 dateOfBirth: 2000-05-15
 gender: male
 schoolId: <school-uuid>
-faculty: Engineering
-department: Computer Science
+facultyId: <faculty-uuid>
+departmentId: <department-uuid>
 matricNumber: ENG/2020/001
 jambNumber: 12345678AB
 username: johndoe2024
@@ -127,9 +135,10 @@ phoneNumber: +2348012345678
 termsAccepted: true
 profilePicture: [file]
 schoolIdCard: [file]
+administrationLetter: [file]
 ```
 
-### 5. Check Onboarding Status
+### 6. Check Onboarding Status
 ```http
 GET /v1/auth/onboarding-status
 Authorization: Bearer <access_token>
@@ -174,6 +183,18 @@ src/
 │   ├── schools.controller.ts
 │   ├── schools.module.ts
 │   └── schools.service.ts
+├── faculties/
+│   ├── entities/
+│   │   └── faculty.entity.ts
+│   ├── faculties.controller.ts
+│   ├── faculties.module.ts
+│   └── faculties.service.ts
+├── departments/
+│   ├── entities/
+│   │   └── department.entity.ts
+│   ├── departments.controller.ts
+│   ├── departments.module.ts
+│   └── departments.service.ts
 ├── common/
 │   ├── filters/
 │   │   └── http-exception.filter.ts

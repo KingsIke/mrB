@@ -23,7 +23,10 @@
     "migration:run": "typeorm-ts-node-commonjs migration:run -d ./src/config/typeorm.config.ts",
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d ./src/config/typeorm.config.ts",
     "schema:drop": "typeorm-ts-node-commonjs schema:drop -d ./src/config/typeorm.config.ts",
-    "seed:schools": "ts-node -r tsconfig-paths/register src/database/seeds/seed-schools.ts"
+    "seed:schools": "ts-node -r tsconfig-paths/register src/database/seeds/seed-schools.ts",
+    "seed:faculties": "ts-node -r tsconfig-paths/register src/database/seeds/seed-faculties.ts",
+    "seed:departments": "ts-node -r tsconfig-paths/register src/database/seeds/seed-departments.ts",
+    "seed:all": "npm run seed:schools && npm run seed:faculties && npm run seed:departments"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",
