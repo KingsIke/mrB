@@ -11,6 +11,8 @@ import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { OtpService } from '../otp/otp.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { FacultiesService } from '../faculties/faculties.service';
+import { DepartmentsService } from '../departments/departments.service';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { LoginDto } from '../users/dto/login.dto';
 import { VerifyOtpDto } from '../users/dto/verify-otp.dto';
@@ -39,6 +41,8 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly facultiesService: FacultiesService,
+    private readonly departmentsService: DepartmentsService,
   ) {}
 
   // ========== SIGN UP ==========
@@ -185,6 +189,17 @@ export class AuthService {
       throw new BadRequestException('You must accept the terms and conditions');
     }
 
+    // Validate faculty/department belong to the selected school/faculty
+    const faculty = await this.facultiesService.findById(dto.facultyId);
+    if (!faculty || faculty.schoolId !== dto.schoolId) {
+      throw new NotFoundException('Faculty not found for the selected school');
+    }
+
+    const department = await this.departmentsService.findById(dto.departmentId);
+    if (!department || department.facultyId !== dto.facultyId) {
+      throw new NotFoundException('Department not found for the selected faculty');
+    }
+
     // Handle file uploads
     let profilePictureUrl = user.profilePictureUrl;
     let schoolIdCardUrl = user.schoolIdCardUrl;
@@ -219,8 +234,8 @@ export class AuthService {
       dateOfBirth: new Date(dto.dateOfBirth),
       gender: dto.gender,
       schoolId: dto.schoolId,
-      faculty: dto.faculty,
-      department: dto.department,
+      facultyId: dto.facultyId,
+      departmentId: dto.departmentId,
       matricNumber: dto.matricNumber || undefined,
       jambNumber: dto.jambNumber || undefined,
       username: dto.username,
@@ -278,8 +293,8 @@ export class AuthService {
     if (!user.dateOfBirth) missingFields.push('dateOfBirth');
     if (!user.gender) missingFields.push('gender');
     if (!user.schoolId) missingFields.push('school');
-    if (!user.faculty) missingFields.push('faculty');
-    if (!user.department) missingFields.push('department');
+    if (!user.facultyId) missingFields.push('faculty');
+    if (!user.departmentId) missingFields.push('department');
     if (!user.username) missingFields.push('username');
     if (!user.phoneNumber) missingFields.push('phoneNumber');
     if (!user.termsAccepted) missingFields.push('termsAccepted');

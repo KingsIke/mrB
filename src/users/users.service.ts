@@ -48,7 +48,10 @@ export class UsersService {
   }
 
   async update(id: string, data: Partial<User>): Promise<User> {
-    const user = await this.findById(id);
+    // Fetch without relations: a loaded ManyToOne relation (e.g. `school`) takes
+    // precedence over a directly-assigned FK column (e.g. `schoolId`) on save,
+    // silently reverting the FK to whatever the stale loaded relation was.
+    const user = await this.userRepository.findOne({ where: { id } });
     if (!user) {
       throw new NotFoundException(`User with ID "${id}" not found`);
     }
@@ -70,7 +73,8 @@ export class UsersService {
     }
 
     Object.assign(user, data);
-    return this.userRepository.save(user);
+    await this.userRepository.save(user);
+    return (await this.findById(id))!;
   }
 
   async remove(id: string): Promise<void> {

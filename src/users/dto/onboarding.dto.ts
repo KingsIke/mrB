@@ -40,17 +40,13 @@ export class OnboardingStep2Dto {
   @IsUUID()
   schoolId: string;
 
-  @ApiProperty({ description: 'School faculty', example: 'Engineering' })
-  @IsString()
-  @MinLength(1)
-  @MaxLength(255)
-  faculty: string;
+  @ApiProperty({ description: 'Faculty ID (UUID)', example: '550e8400-e29b-41d4-a716-446655440001' })
+  @IsUUID()
+  facultyId: string;
 
-  @ApiProperty({ description: 'School department', example: 'Computer Science' })
-  @IsString()
-  @MinLength(1)
-  @MaxLength(255)
-  department: string;
+  @ApiProperty({ description: 'Department ID (UUID)', example: '550e8400-e29b-41d4-a716-446655440002' })
+  @IsUUID()
+  departmentId: string;
 
   @ApiPropertyOptional({ description: 'Matric number (if available)', example: 'ENG/2020/001' })
   @IsOptional()
@@ -107,17 +103,13 @@ export class CompleteOnboardingDto {
   @IsUUID()
   schoolId: string;
 
-  @ApiProperty({ description: 'School faculty', example: 'Engineering' })
-  @IsString()
-  @MinLength(1)
-  @MaxLength(255)
-  faculty: string;
+  @ApiProperty({ description: 'Faculty ID (UUID)', example: '550e8400-e29b-41d4-a716-446655440001' })
+  @IsUUID()
+  facultyId: string;
 
-  @ApiProperty({ description: 'School department', example: 'Computer Science' })
-  @IsString()
-  @MinLength(1)
-  @MaxLength(255)
-  department: string;
+  @ApiProperty({ description: 'Department ID (UUID)', example: '550e8400-e29b-41d4-a716-446655440002' })
+  @IsUUID()
+  departmentId: string;
 
   @ApiPropertyOptional({ description: 'Matric number', example: 'ENG/2020/001' })
   @IsOptional()

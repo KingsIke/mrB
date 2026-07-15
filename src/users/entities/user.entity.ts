@@ -11,6 +11,8 @@ import {
   BeforeUpdate,
 } from 'typeorm';
 import { School } from '../../schools/entities/school.entity';
+import { Faculty } from '../../faculties/entities/faculty.entity';
+import { Department } from '../../departments/entities/department.entity';
 
 export enum UserGender {
   MALE = 'male',
@@ -82,11 +84,19 @@ export class User {
   @Column({ type: 'uuid', nullable: true })
   schoolId: string;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  faculty: string;
+  @ManyToOne(() => Faculty, { nullable: true })
+  @JoinColumn({ name: 'facultyId' })
+  faculty: Faculty;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  department: string;
+  @Column({ type: 'uuid', nullable: true })
+  facultyId: string;
+
+  @ManyToOne(() => Department, { nullable: true })
+  @JoinColumn({ name: 'departmentId' })
+  department: Department;
+
+  @Column({ type: 'uuid', nullable: true })
+  departmentId: string;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   matricNumber: string;

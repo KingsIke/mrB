@@ -6,6 +6,8 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { UsersModule } from '../users/users.module';
 import { OtpModule } from '../otp/otp.module';
+import { FacultiesModule } from '../faculties/faculties.module';
+import { DepartmentsModule } from '../departments/departments.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
@@ -13,6 +15,8 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
   imports: [
     UsersModule,
     OtpModule,
+    FacultiesModule,
+    DepartmentsModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
