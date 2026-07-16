@@ -8,6 +8,8 @@ import {
   HttpStatus,
   UseGuards,
   Get,
+  Query,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBearerAuth } from '@nestjs/swagger';
@@ -16,7 +18,7 @@ import { CreateUserDto } from '../users/dto/create-user.dto';
 import { LoginDto } from '../users/dto/login.dto';
 import { VerifyOtpDto } from '../users/dto/verify-otp.dto';
 import { ResendOtpDto } from '../users/dto/resend-otp.dto';
-import { CompleteOnboardingDto } from '../users/dto/onboarding.dto';
+import { CompleteOnboardingDto, ForgotPasswordDto, ResetPasswordWithTokenDto, VerifyResetOtpDto, } from '../users/dto/onboarding.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { memoryStorage } from 'multer';
@@ -52,7 +54,34 @@ export class AuthController {
     return this.authService.resendOtp(resendOtpDto);
   }
 
-  @Post('login')
+// ========== STEP 1: FORGOT PASSWORD ==========
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Step 1: Request a password reset OTP' })
+  @ApiResponse({ status: 200, description: 'OTP sent successfully' })
+  async forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(forgotPasswordDto);
+  }
+
+  // ========== STEP 2: VERIFY RESET OTP ==========
+  @Post('verify-reset-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Step 2: Verify reset OTP & receive temporary reset token' })
+  @ApiResponse({ status: 200, description: 'OTP verified, short-lived resetToken returned' })
+  async verifyResetOtp(@Body() verifyResetOtpDto: VerifyResetOtpDto) {
+    return this.authService.verifyResetOtp(verifyResetOtpDto);
+  }
+
+  // ========== STEP 3: RESET PASSWORD ==========
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Step 3: Complete password reset using the reset token' })
+  @ApiResponse({ status: 200, description: 'Password reset successful, logged in' })
+  async resetPassword(@Body() resetPasswordDto: ResetPasswordWithTokenDto): Promise<AuthResponse> {
+    return this.authService.resetPassword(resetPasswordDto);
+  }
+
+    @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiResponse({ status: 200, description: 'Login successful', type: Object })
@@ -123,5 +152,23 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Onboarding status' })
   async checkOnboardingStatus(@CurrentUser('userId') userId: string) {
     return this.authService.checkOnboardingStatus(userId);
+  }
+
+  @Get('check-username')
+  @ApiOperation({ summary: 'Check username availability and get suggestions' })
+  async checkUsername(@Query('username') username: string) {
+    if (!username || username.trim().length < 3) {
+      throw new BadRequestException('Username must be at least 3 characters long');
+    }
+    return this.authService.validateAndSuggestUsername(username);
+  }
+
+  @Get('check-phone')
+  @ApiOperation({ summary: 'Check phone number uniqueness' })
+  async checkPhone(@Query('phone') phone: string) {
+    if (!phone || phone.trim().length < 10) {
+      throw new BadRequestException('Invalid phone number format');
+    }
+    return this.authService.validatePhoneUniqueness(phone);
   }
 }

@@ -138,3 +138,24 @@ export class CompleteOnboardingDto {
   @IsBoolean()
   termsAccepted: boolean;
 }
+
+
+
+export interface ForgotPasswordDto {
+  email: string;
+}
+
+export interface VerifyResetOtpDto {
+  email: string;
+  code: string;
+}
+
+export class ResetPasswordWithTokenDto {
+  @IsString()
+  @IsNotEmpty({ message: 'The reset token is required' })
+  resetToken: string;
+
+  @IsString()
+  @MinLength(8, { message: 'Password must be at least 8 characters long' })
+  password: string;
+}
