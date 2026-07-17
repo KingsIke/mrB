@@ -26,7 +26,9 @@
     "seed:schools": "ts-node -r tsconfig-paths/register src/database/seeds/seed-schools.ts",
     "seed:faculties": "ts-node -r tsconfig-paths/register src/database/seeds/seed-faculties.ts",
     "seed:departments": "ts-node -r tsconfig-paths/register src/database/seeds/seed-departments.ts",
-    "seed:all": "npm run seed:schools && npm run seed:faculties && npm run seed:departments"
+    "seed:levels": "ts-node -r tsconfig-paths/register src/database/seeds/seed-levels.ts",
+    "seed:gifts": "ts-node -r tsconfig-paths/register src/database/seeds/seed-gifts.ts",
+    "seed:all": "npm run seed:schools && npm run seed:faculties && npm run seed:departments && npm run seed:levels && npm run seed:gifts"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",
@@ -35,9 +37,11 @@
     "@nestjs/jwt": "^10.2.0",
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.3.0",
+    "@nestjs/schedule": "^4.1.0",
     "@nestjs/swagger": "^7.2.0",
     "@nestjs/throttler": "^5.1.0",
     "@nestjs/typeorm": "^10.0.1",
+    "axios": "^1.7.9",
     "bcrypt": "^5.1.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
