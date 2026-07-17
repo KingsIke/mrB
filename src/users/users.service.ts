@@ -4,7 +4,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -39,6 +39,19 @@ export class UsersService {
       where: { username: username.toLowerCase().trim() },
     });
   }
+
+  // New method: Finds which usernames from a list are already taken
+  async findTakenUsernames(usernames: string[]): Promise<string[]> {
+    const records = await this.userRepository.find({
+      where: { username: In(usernames) },
+      select: ['username'],
+    });
+    return records.map(r => r.username.toLowerCase());
+  }
+
+  async findByPhoneNumber(phoneNumber: string): Promise<User | null> {
+  return this.userRepository.findOne({ where: { phoneNumber } });
+}
 
   async findAll(): Promise<User[]> {
     return this.userRepository.find({
