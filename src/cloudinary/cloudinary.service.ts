@@ -11,15 +11,20 @@ export class CloudinaryService {
 
   uploadFile(
     file: Express.Multer.File,
-    options: { folder?: string; resourceType?: CloudinaryResourceType } = {},
+    options: {
+      folder?: string;
+      resourceType?: CloudinaryResourceType;
+      transformation?: Record<string, string | number>[];
+    } = {},
   ): Promise<UploadApiResponse> {
-    const { folder, resourceType = 'auto' } = options;
+    const { folder, resourceType = 'auto', transformation } = options;
 
     return new Promise((resolve, reject) => {
       const uploadStream = this.cloudinary.uploader.upload_stream(
         {
           folder,
           resource_type: resourceType,
+          transformation,
         },
         (error: UploadApiErrorResponse | undefined, result?: UploadApiResponse) => {
           if (error || !result) {

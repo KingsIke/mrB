@@ -8,6 +8,7 @@ import { UsersModule } from '../users/users.module';
 import { OtpModule } from '../otp/otp.module';
 import { FacultiesModule } from '../faculties/faculties.module';
 import { DepartmentsModule } from '../departments/departments.module';
+import { GamificationModule } from '../gamification/gamification.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
@@ -17,6 +18,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
     OtpModule,
     FacultiesModule,
     DepartmentsModule,
+    GamificationModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

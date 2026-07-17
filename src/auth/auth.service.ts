@@ -41,6 +41,8 @@ export interface VerifyOtpResponse {
   onboardingRequired: boolean;
   onboardingStep: string;
 }
+import { GamificationService } from '../gamification/gamification.service';
+
 export interface AuthResponse {
   accessToken: string;
   refreshToken: string;
@@ -59,6 +61,7 @@ export class AuthService {
     private readonly cloudinaryService: CloudinaryService,
     private readonly facultiesService: FacultiesService,
     private readonly departmentsService: DepartmentsService,
+    private readonly gamificationService: GamificationService,
   ) {}
 
   // ========== SIGN UP ==========
@@ -188,6 +191,8 @@ export class AuthService {
     if (user.isOnboardingComplete && user.status !== UserStatus.ACTIVE) {
       await this.usersService.update(user.id, { status: UserStatus.ACTIVE });
     }
+
+    await this.gamificationService.recordDailyLogin(user.id);
 
     const { password, ...userWithoutPassword } = user;
 

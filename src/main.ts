@@ -5,7 +5,9 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody is needed to verify the Paystack webhook's HMAC signature, which
+  // must be computed over the exact raw request bytes, not the parsed JSON body.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   // Security headers
   app.use(helmet());
@@ -45,6 +47,14 @@ async function bootstrap() {
     .addTag('Auth', 'Authentication & Authorization')
     .addTag('Onboarding', 'User onboarding & profile setup')
     .addTag('Users', 'User management')
+    .addTag('Posts', 'Post feed, likes, comments, reshares, favorites, reports')
+    .addTag('Comments', 'Comment replies, likes, and reports')
+    .addTag('Notifications', 'In-app notification feed')
+    .addTag('Stories', '24h ephemeral stories, reactions, and replies')
+    .addTag('Gamification', 'XP, levels, and streaks')
+    .addTag('Coins', 'Campus Coins balance and Paystack purchases')
+    .addTag('Gifts', 'Gift catalog and sending gifts')
+    .addTag('Follows', 'Following and blocking other users')
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
