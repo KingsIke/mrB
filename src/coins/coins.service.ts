@@ -16,7 +16,7 @@ import {
   encodeCursor,
 } from '../common/pagination/cursor-pagination.dto';
 
-const COIN_RATE_NGN = 10; // ₦10 per Campus Coin — placeholder pricing, tune before launch.
+const COIN_RATE_NGN = 10; 
 
 @Injectable()
 export class CoinsService {

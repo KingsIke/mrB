@@ -16,6 +16,7 @@ import { UsersModule } from '../users/users.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { GamificationModule } from '../gamification/gamification.module';
 import { FollowsModule } from '../follows/follows.module';
+import { PostsGateway } from './posts.gateway';
 
 @Module({
   imports: [
@@ -36,7 +37,7 @@ import { FollowsModule } from '../follows/follows.module';
     FollowsModule,
   ],
   controllers: [PostsController, CommentsController],
-  providers: [PostsService],
-  exports: [PostsService],
+  providers: [PostsService, PostsGateway],
+  exports: [PostsService, PostsGateway],
 })
 export class PostsModule {}

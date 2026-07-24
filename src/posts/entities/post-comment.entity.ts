@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
+  OneToMany, 
   JoinColumn,
 } from 'typeorm';
 import { Post } from './post.entity';
@@ -32,12 +33,17 @@ export class PostComment {
   @Column({ type: 'text' })
   text: string;
 
-  @ManyToOne(() => PostComment, { nullable: true, onDelete: 'CASCADE' })
+
+  @ManyToOne(() => PostComment, (comment) => comment.replies, { nullable: true, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'parentCommentId' })
   parentComment: PostComment;
 
   @Column({ type: 'uuid', nullable: true })
   parentCommentId: string;
+
+
+  @OneToMany(() => PostComment, (comment) => comment.parentComment)
+  replies: PostComment[];
 
   @Column({ type: 'int', default: 0 })
   likesCount: number;

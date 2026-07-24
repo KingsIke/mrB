@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Level } from './entities/level.entity';
@@ -33,6 +33,23 @@ export interface XpAwardResult {
   newLevel: Level;
 }
 
+export enum LeaderboardScope {
+  DEPARTMENT = 'department',
+  FACULTY = 'faculty',
+  SCHOOL = 'school',
+  APP = 'app',
+}
+
+export interface LeaderboardQueryOptions {
+  scope?: LeaderboardScope;
+  departmentId?: string;
+  facultyId?: string;
+  schoolId?: string;
+  limit?: number;
+}
+export interface LeaderboardUserXpResponse extends Partial<UserXp> {
+  rank: number;
+}
 @Injectable()
 export class GamificationService {
   constructor(
@@ -43,11 +60,13 @@ export class GamificationService {
     @InjectRepository(XpTransaction)
     private readonly xpTransactionRepository: Repository<XpTransaction>,
     @InjectRepository(GamificationConfig)
+  
     private readonly configRepository: Repository<GamificationConfig>,
     private readonly notificationsService: NotificationsService,
     private readonly coinsService: CoinsService,
   ) {}
 
+  
   async seedLevels(): Promise<void> {
     const count = await this.levelRepository.count();
     if (count > 0) return;
@@ -182,7 +201,70 @@ export class GamificationService {
     return this.levelRepository.find({ order: { level: 'ASC' } });
   }
 
-  async getGiverLeaderboard(limit = 20): Promise<UserXp[]> {
-    return this.userXpRepository.find({ order: { giftsGiven: 'DESC' }, take: limit });
+async getGiverLeaderboard(
+    options: LeaderboardQueryOptions = {},
+  ): Promise<LeaderboardUserXpResponse[]> {
+    const { scope = LeaderboardScope.APP, departmentId, facultyId, schoolId, limit = 20 } = options;
+
+    // 1. Fetch levels ordered by minXp for matching
+    const levels = await this.levelRepository.find({
+      order: { minXp: 'ASC' },
+    });
+
+    // 2. Query leaderboard data
+    const query = this.userXpRepository
+      .createQueryBuilder('userXp')
+      .leftJoinAndSelect('userXp.user', 'user')
+      .orderBy('userXp.giftsGiven', 'DESC')
+      .addOrderBy('userXp.totalXp', 'DESC')
+      .take(limit);
+
+    switch (scope) {
+      case LeaderboardScope.DEPARTMENT:
+        if (!departmentId) {
+          throw new BadRequestException('departmentId is required for department scope');
+        }
+        query.andWhere('user.departmentId = :departmentId', { departmentId });
+        break;
+
+      case LeaderboardScope.FACULTY:
+        if (!facultyId) {
+          throw new BadRequestException('facultyId is required for faculty scope');
+        }
+        query.andWhere('user.facultyId = :facultyId', { facultyId });
+        break;
+
+      case LeaderboardScope.SCHOOL:
+        if (!schoolId) {
+          throw new BadRequestException('schoolId is required for school scope');
+        }
+        query.andWhere('user.schoolId = :schoolId', { schoolId });
+        break;
+
+      case LeaderboardScope.APP:
+      default:
+        break;
+    }
+
+    const results = await query.getMany();
+
+    // 3. Map each user's totalXp to their Level entity
+    return results.map((item, index) => {
+      const userXp = item.totalXp || 0;
+
+      // Find matching level based on minXp and maxXp range
+      const matchedLevel =
+        levels.find(
+          (lvl) =>
+            userXp >= lvl.minXp && (lvl.maxXp === null || userXp <= lvl.maxXp),
+        ) || levels[0]; 
+
+      return {
+        ...item,
+        rank: index + 1,
+        level: matchedLevel?.level || item.currentLevel || 1,
+        appLevel: matchedLevel,
+      };
+    });
   }
 }

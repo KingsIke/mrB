@@ -4,6 +4,7 @@ import {
   ConflictException,
   BadRequestException,
   NotFoundException,
+  InternalServerErrorException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
@@ -32,21 +33,44 @@ import {
   OnboardingStep,
 } from "../users/entities/user.entity";
 import { OtpPurpose } from "src/otp/entities/otp.entity";
+import { GamificationService } from '../gamification/gamification.service';
+import { SchoolsService } from "src/schools/schools.service";
 
 export interface VerifyOtpResponse {
   message: string;
   accessToken: string;
   refreshToken: string;
-  user: Partial<User>;
+  user: Partial<User> & {
+    schoolName?: string;
+    facultyName?: string;
+    departmentName?: string;
+    appLevel?: any;
+    gamification?: {
+      totalXp: number;
+      nextLevel: any;
+      progress: number;
+      currentStreak: number;
+    };
+  };
   onboardingRequired: boolean;
   onboardingStep: string;
 }
-import { GamificationService } from '../gamification/gamification.service';
 
 export interface AuthResponse {
   accessToken: string;
   refreshToken: string;
-  user: Partial<User>;
+  user: Partial<User> & {
+    schoolName?: string;
+    facultyName?: string;
+    departmentName?: string;
+    appLevel?: any; 
+    gamification?: {
+      totalXp: number;
+      nextLevel: any;
+      progress: number;
+      currentStreak: number;
+    };
+  };
   onboardingRequired: boolean;
   onboardingStep: string;
 }
@@ -61,42 +85,85 @@ export class AuthService {
     private readonly cloudinaryService: CloudinaryService,
     private readonly facultiesService: FacultiesService,
     private readonly departmentsService: DepartmentsService,
+    private readonly schoolsService: SchoolsService,
     private readonly gamificationService: GamificationService,
   ) {}
 
-  // ========== SIGN UP ==========
-  async signUp(
-    createUserDto: CreateUserDto,
-  ): Promise<{ message: string; email: string }> {
-    // Check if user already exists
-    const existingUser = await this.usersService.findByEmail(
-      createUserDto.email,
-    );
-    if (existingUser) {
-      throw new ConflictException("An account with this email already exists");
+  // Helper function to extract School, Faculty, and Department details safely
+  private async getUserAcademicDetails(user: User): Promise<{
+    schoolName?: string;
+    facultyName?: string;
+    departmentName?: string;
+  }> {
+    let schoolName: string | undefined;
+    let facultyName: string | undefined;
+    let departmentName: string | undefined;
+
+    // Check if relations are populated directly on the user entity
+    if ((user as any).school?.name) {
+      schoolName = (user as any).school.name;
+    } else if (user.schoolId) {
+      const school = await this.schoolsService.findById(user.schoolId);
+      schoolName = school?.name;
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(createUserDto.password, 12);
+    if ((user as any).faculty?.name) {
+      facultyName = (user as any).faculty.name;
+    } else if (user.facultyId) {
+      const faculty = await this.facultiesService.findById(user.facultyId);
+      facultyName = faculty?.name;
+      // Also grab school from faculty relation if not already found
+      if (!schoolName && (faculty as any)?.school?.name) {
+        schoolName = (faculty as any).school.name;
+      }
+    }
 
-    // Create user with pending verification status
-    const user = await this.usersService.create({
-      ...createUserDto,
-      password: hashedPassword,
-      status: UserStatus.PENDING_VERIFICATION,
-      onboardingStep: OnboardingStep.NONE,
-    });
-
-    // Generate and send OTP
-    await this.otpService.generateAndSendOtp(user);
+    if ((user as any).department?.name) {
+      departmentName = (user as any).department.name;
+    } else if (user.departmentId) {
+      const department = await this.departmentsService.findById(user.departmentId);
+      departmentName = department?.name;
+    }
 
     return {
-      message:
-        "Account created successfully. Please verify your email with the OTP sent.",
-      email: user.email,
+      schoolName,
+      facultyName,
+      departmentName,
     };
   }
 
+  // ========== SIGN UP ==========
+ async signUp(createUserDto: CreateUserDto): Promise<{ message: string; email: string }> {
+  const existingUser = await this.usersService.findByEmail(createUserDto.email);
+  if (existingUser) {
+    throw new ConflictException("An account with this email already exists");
+  }
+
+  const hashedPassword = await bcrypt.hash(createUserDto.password, 12);
+
+  const user = await this.usersService.create({
+    ...createUserDto,
+    password: hashedPassword,
+    status: UserStatus.PENDING_VERIFICATION,
+    onboardingStep: OnboardingStep.NONE,
+  });
+
+  try {
+    await this.otpService.generateAndSendOtp(user);
+  } catch (error) {
+    // Clean up the created user if OTP sending fails
+    await this.usersService.remove(user.id);
+    
+    throw new InternalServerErrorException(
+      "Failed to send verification email. Please try signing up again."
+    );
+  }
+
+  return {
+    message: "Account created successfully. Please verify your email with the OTP sent.",
+    email: user.email,
+  };
+}
   // ========== VERIFY OTP (AUTO-LOGIN VERSION) ==========
   async verifyOtp(verifyOtpDto: VerifyOtpDto): Promise<VerifyOtpResponse> {
     const user = await this.usersService.findByEmail(verifyOtpDto.email);
@@ -109,27 +176,39 @@ export class AuthService {
       throw new BadRequestException("Invalid or expired OTP code");
     }
 
-    // Mark email as verified and update status
     const updatedUser = await this.usersService.update(user.id, {
       isEmailVerified: true,
       status: UserStatus.PENDING_ONBOARDING,
       onboardingStep: OnboardingStep.EMAIL_VERIFIED,
     });
 
-    // 1. Generate access and refresh tokens for this newly verified user
     const tokens = await this.generateTokens(updatedUser);
 
-    // 2. Prepare payload flags for onboarding routing
     const onboardingRequired = !updatedUser.isOnboardingComplete;
     const onboardingStep = updatedUser.onboardingStep;
 
+    await this.gamificationService.recordDailyLogin(updatedUser.id);
+    const levelStats = await this.gamificationService.getMe(updatedUser.id);
+
+    // Fetch school, faculty, and department names
+    const academicDetails = await this.getUserAcademicDetails(updatedUser);
+
     const { password, ...userWithoutPassword } = updatedUser;
 
-    // 3. Return the payload to instantly log them in on the client side
     return {
       message: "Email verified successfully. Welcome!",
       ...tokens,
-      user: userWithoutPassword,
+      user: {
+        ...userWithoutPassword,
+        ...academicDetails,
+        appLevel: levelStats.level,
+        gamification: {
+          totalXp: levelStats.totalXp,
+          nextLevel: levelStats.nextLevel,
+          progress: levelStats.progress,
+          currentStreak: levelStats.currentStreak,
+        },
+      },
       onboardingRequired,
       onboardingStep,
     };
@@ -163,7 +242,6 @@ export class AuthService {
       throw new UnauthorizedException("Invalid email or password");
     }
 
-    // Check password
     const isPasswordValid = await bcrypt.compare(
       loginDto.password,
       user.password,
@@ -172,7 +250,6 @@ export class AuthService {
       throw new UnauthorizedException("Invalid email or password");
     }
 
-    // Check if email is verified
     if (!user.isEmailVerified) {
       await this.otpService.generateAndSendOtp(user);
       throw new UnauthorizedException(
@@ -180,25 +257,36 @@ export class AuthService {
       );
     }
 
-    // Check onboarding status
     const onboardingRequired = !user.isOnboardingComplete;
     const onboardingStep = user.onboardingStep;
 
-    // Generate tokens
     const tokens = await this.generateTokens(user);
 
-    // Update status if onboarding is complete
     if (user.isOnboardingComplete && user.status !== UserStatus.ACTIVE) {
       await this.usersService.update(user.id, { status: UserStatus.ACTIVE });
     }
 
     await this.gamificationService.recordDailyLogin(user.id);
+    const levelStats = await this.gamificationService.getMe(user.id);
+
+    // Fetch school, faculty, and department names
+    const academicDetails = await this.getUserAcademicDetails(user);
 
     const { password, ...userWithoutPassword } = user;
 
     return {
       ...tokens,
-      user: userWithoutPassword,
+      user: {
+        ...userWithoutPassword,
+        ...academicDetails,
+        appLevel: levelStats.level, 
+        gamification: {
+          totalXp: levelStats.totalXp,
+          nextLevel: levelStats.nextLevel,
+          progress: levelStats.progress,
+          currentStreak: levelStats.currentStreak,
+        }
+      },
       onboardingRequired,
       onboardingStep,
     };
@@ -219,7 +307,6 @@ export class AuthService {
       throw new NotFoundException("User not found");
     }
 
-    // 2. NEW: Check phone number uniqueness (Prevents the constraint crash)
     const existingPhone = await this.usersService.findByPhoneNumber(
       dto.phoneNumber,
     );
@@ -233,7 +320,6 @@ export class AuthService {
       throw new BadRequestException("Onboarding is already complete");
     }
 
-    // Check username uniqueness
     const existingUsername = await this.usersService.findByUsername(
       dto.username,
     );
@@ -245,7 +331,6 @@ export class AuthService {
       throw new BadRequestException("You must accept the terms and conditions");
     }
 
-    // Validate faculty/department belong to the selected school/faculty
     const faculty = await this.facultiesService.findById(dto.facultyId);
     if (!faculty || faculty.schoolId !== dto.schoolId) {
       throw new NotFoundException("Faculty not found for the selected school");
@@ -258,7 +343,6 @@ export class AuthService {
       );
     }
 
-    // Handle file uploads
     let profilePictureUrl = user.profilePictureUrl;
     let schoolIdCardUrl = user.schoolIdCardUrl;
     let administrationLetterUrl = user.administrationLetterUrl;
@@ -294,8 +378,6 @@ export class AuthService {
       administrationLetterUrl = result.secure_url;
     }
 
-    // Update user with all onboarding data
-
     try {
       const updatedUser = await this.usersService.update(userId, {
         firstName: dto.firstName,
@@ -326,7 +408,6 @@ export class AuthService {
         user: userWithoutPassword,
       };
     } catch (error: any) {
-      // Catch Postgres duplicate key error code (23505)
       if (error.code === "23505" || error.message.includes("duplicate key")) {
         throw new ConflictException(
           "A user with this Username, Phone Number, Matric Number, or JAMB Number already exists.",
@@ -402,7 +483,6 @@ export class AuthService {
       throw new NotFoundException("No account found with this email address");
     }
 
-    // Generate and send password reset OTP
     await this.otpService.generateAndSendOtp(user, OtpPurpose.PASSWORD_RESET);
 
     return {
@@ -411,7 +491,7 @@ export class AuthService {
     };
   }
 
-  // ========== STEP 2: VERIFY RESET OTP (CORRECTED) ==========
+  // ========== STEP 2: VERIFY RESET OTP ==========
   async verifyResetOtp(
     verifyResetOtpDto: VerifyResetOtpDto,
   ): Promise<{ message: string; resetToken: string }> {
@@ -429,7 +509,6 @@ export class AuthService {
       throw new BadRequestException("Invalid or expired OTP code");
     }
 
-    // Explicitly pass the secret here when signing
     const resetToken = this.jwtService.sign(
       { sub: user.id, email: user.email, type: "password-reset" },
       {
@@ -444,13 +523,12 @@ export class AuthService {
     };
   }
 
-  // ========== STEP 3: RESET PASSWORD WITH TOKEN (CORRECTED) ==========
+  // ========== STEP 3: RESET PASSWORD WITH TOKEN ==========
   async resetPassword(
     resetPasswordDto: ResetPasswordWithTokenDto,
   ): Promise<AuthResponse> {
     let payload: any;
     try {
-      // Verifies using the exact same secret used above
       payload = this.jwtService.verify(resetPasswordDto.resetToken, {
         secret: this.configService.get("JWT_REFRESH_SECRET"),
       });
@@ -459,9 +537,7 @@ export class AuthService {
         throw new UnauthorizedException("Invalid token type");
       }
     } catch (error) {
-      console.log("the errr", error);
-      // Log the actual error internally to help you debug during development
-      console.error("Reset Token Verification Error:");
+      console.error("Reset Token Verification Error:", error);
       throw new UnauthorizedException(
         "The password reset session has expired or is invalid",
       );
@@ -483,11 +559,15 @@ export class AuthService {
     const onboardingRequired = !updatedUser.isOnboardingComplete;
     const onboardingStep = updatedUser.onboardingStep;
 
+    const academicDetails = await this.getUserAcademicDetails(updatedUser);
     const { password, ...userWithoutPassword } = updatedUser;
 
     return {
       ...tokens,
-      user: userWithoutPassword,
+      user: {
+        ...userWithoutPassword,
+        ...academicDetails,
+      },
       onboardingRequired,
       onboardingStep,
     };
@@ -497,7 +577,6 @@ export class AuthService {
     const normalized = username.toLowerCase().trim().replace(/\s+/g, '');
     const existingUser = await this.usersService.findByUsername(normalized);
 
-    // Case 1: Username is available
     if (!existingUser) {
       return {
         available: true,
@@ -505,10 +584,8 @@ export class AuthService {
       };
     }
 
-    // Case 2: Username is taken, build suggestions
     const rawSuggestions: string[] = [];
-    
-    // Generate potential options
+
     const randomSuffixes = [
       Math.floor(10 + Math.random() * 90),     
       Math.floor(100 + Math.random() * 900),   
@@ -518,15 +595,12 @@ export class AuthService {
     randomSuffixes.forEach(suffix => {
       rawSuggestions.push(`${normalized}${suffix}`);
     });
-    
-    // Add extra clean variations
+
     rawSuggestions.push(`${normalized}_`);
     rawSuggestions.push(`the${normalized}`);
 
-    // Batch query the database to find which generated items are already taken
     const takenUsernames = await this.usersService.findTakenUsernames(rawSuggestions);
 
-    // Filter down to available selections only, capped at 3 suggestions
     const uniqueAvailableSuggestions = rawSuggestions
       .filter(item => !takenUsernames.includes(item))
       .slice(0, 3);
@@ -537,15 +611,14 @@ export class AuthService {
     };
   }
 
-  
-async validatePhoneUniqueness(phone: string): Promise<{ available: boolean }> {
-  const normalized = phone.trim();
-  const existingUser = await this.usersService.findByPhoneNumber(normalized);
+  async validatePhoneUniqueness(phone: string): Promise<{ available: boolean }> {
+    const normalized = phone.trim();
+    const existingUser = await this.usersService.findByPhoneNumber(normalized);
 
-  return {
-    available: !existingUser,
-  };
-}
+    return {
+      available: !existingUser,
+    };
+  }
 
   // ========== PRIVATE: Generate Tokens ==========
   private async generateTokens(

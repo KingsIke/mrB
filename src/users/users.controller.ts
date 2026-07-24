@@ -37,6 +37,17 @@ export class UsersController {
     return userWithoutPassword;
   }
 
+  // ✅ NEW: Convenient endpoint to fetch stats for the currently logged-in user
+  @Get('me/stats')
+  @ApiOperation({ summary: 'Get current user profile statistics' })
+  @ApiResponse({
+    status: 200,
+    description: 'Counts of posts, likes, followers, following, and gifts for current user',
+  })
+  async getMyStats(@CurrentUser('userId') userId: string) {
+    return this.usersService.getUserStats(userId);
+  }
+
   @Patch('me')
   @ApiOperation({ summary: 'Update current user profile' })
   @ApiResponse({ status: 200, description: 'Profile updated', type: User })
@@ -58,6 +69,19 @@ export class UsersController {
       const { password, ...rest } = user;
       return rest;
     });
+  }
+
+  // ✅ FIXED & ENHANCED: Validated with ParseUUIDPipe and documented for Swagger
+  @Get(':id/stats')
+  @ApiOperation({ summary: 'Get user profile statistics by user ID' })
+  @ApiParam({ name: 'id', description: 'User UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Counts of posts, likes, followers, following, and gifts',
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async getUserStats(@Param('id', ParseUUIDPipe) id: string) {
+    return this.usersService.getUserStats(id);
   }
 
   @Get(':id')

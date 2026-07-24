@@ -30,6 +30,12 @@ export class Story {
   @Column({ type: 'text', nullable: true })
   textContent: string | null;
 
+  @Column({ type: 'varchar', length: 7, nullable: true })
+  backgroundColor: string | null;
+
+  @Column({ type: 'varchar', length: 10, default: 'center' })
+  textAlign: 'left' | 'center' | 'right';
+
   @Column({ type: 'uuid', nullable: true })
   schoolId: string;
 

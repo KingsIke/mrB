@@ -51,4 +51,10 @@ export class CreatePostDto {
   @IsArray()
   @IsUUID('4', { each: true })
   taggedUserIds?: string[];
+
+  @ApiPropertyOptional({ type: [String], description: '#Unilag' })
+  @IsOptional()
+  @IsArray() 
+  @IsString({ each: true })
+  hashtags?: string[];
 }
