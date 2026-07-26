@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   UnauthorizedException,
   ConflictException,
   BadRequestException,
@@ -35,6 +36,7 @@ import {
 import { OtpPurpose } from "src/otp/entities/otp.entity";
 import { GamificationService } from '../gamification/gamification.service';
 import { SchoolsService } from "src/schools/schools.service";
+import { GroupsService } from "../groups/groups.service";
 
 export interface VerifyOtpResponse {
   message: string;
@@ -77,6 +79,8 @@ export interface AuthResponse {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly otpService: OtpService,
@@ -87,6 +91,7 @@ export class AuthService {
     private readonly departmentsService: DepartmentsService,
     private readonly schoolsService: SchoolsService,
     private readonly gamificationService: GamificationService,
+    private readonly groupsService: GroupsService,
   ) {}
 
   // Helper function to extract School, Faculty, and Department details safely
@@ -400,6 +405,19 @@ export class AuthService {
         onboardingStep: OnboardingStep.COMPLETED,
         isOnboardingComplete: true,
       });
+
+      try {
+        await this.groupsService.autoJoinSystemGroups(
+          userId,
+          dto.schoolId,
+          dto.facultyId,
+          dto.departmentId,
+        );
+      } catch (err) {
+        // A group-provisioning failure must not block onboarding completion,
+        // and must not be mistaken for the duplicate-key ConflictException below.
+        this.logger.error("autoJoinSystemGroups failed", err);
+      }
 
       const { password, ...userWithoutPassword } = updatedUser;
 

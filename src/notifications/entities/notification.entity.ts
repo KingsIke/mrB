@@ -10,12 +10,14 @@ export enum NotificationType {
   LEVEL_UP = 'level_up',
   STORY_REPLY = 'story_reply',
   STORY_REACTION = 'story_reaction',
+  GROUP_MESSAGE = 'group_message',
 }
 
 export enum NotificationTargetType {
   POST = 'post',
   COMMENT = 'comment',
   STORY = 'story',
+  GROUP = 'group',
 }
 
 @Entity('notifications')

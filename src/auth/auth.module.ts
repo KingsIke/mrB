@@ -12,6 +12,7 @@ import { GamificationModule } from '../gamification/gamification.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { SchoolsModule } from 'src/schools/schools.module';
+import { GroupsModule } from '../groups/groups.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { SchoolsModule } from 'src/schools/schools.module';
     DepartmentsModule,
     GamificationModule,
     SchoolsModule,
+    GroupsModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
