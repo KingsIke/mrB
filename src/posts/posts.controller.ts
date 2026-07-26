@@ -60,6 +60,55 @@ export class PostsController {
     return this.postsService.getFeed(userId, query);
   }
 
+  // --- User Collections ---
+
+  @Get('me')
+  @ApiOperation({ summary: 'Get published posts created by current user' })
+  async getMyPosts(
+    @CurrentUser('userId') userId: string,
+    @Query() pagination: CursorPaginationDto,
+  ) {
+    return this.postsService.getMyPosts(userId, pagination);
+  }
+
+  @Get('hidden')
+  @ApiOperation({ summary: 'Get hidden posts for current user' })
+  async getHiddenPosts(
+    @CurrentUser('userId') userId: string,
+    @Query() pagination: CursorPaginationDto,
+  ) {
+    return this.postsService.getHiddenPosts(userId, pagination);
+  }
+
+  @Get('tagged')
+  @ApiOperation({ summary: 'Get posts where current user is tagged' })
+  async getTaggedPosts(
+    @CurrentUser('userId') userId: string,
+    @Query() pagination: CursorPaginationDto,
+  ) {
+    return this.postsService.getTaggedPosts(userId, pagination);
+  }
+
+  @Get('favorites')
+  @ApiOperation({ summary: 'Get favorited posts for current user' })
+  async getFavorites(
+    @CurrentUser('userId') userId: string,
+    @Query() pagination: CursorPaginationDto,
+  ) {
+    return this.postsService.getFavorites(userId, pagination);
+  }
+
+  @Get('reshares')
+  @ApiOperation({ summary: 'Get reshares made by current user' })
+  async getReshares(
+    @CurrentUser('userId') userId: string,
+    @Query() pagination: CursorPaginationDto,
+  ) {
+    return this.postsService.getReshares(userId, pagination);
+  }
+
+  // --- Parameterized Endpoints ---
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a post by ID' })
   async findById(@Param('id') id: string) {
@@ -82,6 +131,12 @@ export class PostsController {
   @ApiOperation({ summary: 'Hide own post' })
   async hide(@CurrentUser('userId') userId: string, @Param('id') id: string) {
     return this.postsService.hide(userId, id);
+  }
+
+  @Patch(':id/unhide')
+  @ApiOperation({ summary: 'Unhide own post' })
+  async unhide(@CurrentUser('userId') userId: string, @Param('id') id: string) {
+    return this.postsService.unhide(userId, id);
   }
 
   @Delete(':id')

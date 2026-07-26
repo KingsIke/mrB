@@ -47,44 +47,67 @@ export class StoriesService {
     return story;
   }
 
-  async create(userId: string, dto: CreateStoryDto, file?: Express.Multer.File): Promise<Story> {
-    const user = await this.usersService.findById(userId);
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-    if (!file && !dto.textContent) {
-      throw new BadRequestException('A story needs either media or text content');
-    }
-
-    let mediaUrl: string | null = null;
-    let mediaType = StoryMediaType.TEXT;
-    if (file) {
-      const isVideo = file.mimetype.startsWith('video/');
-      const result = await this.cloudinaryService.uploadFile(file, {
-        folder: 'stories',
-        resourceType: isVideo ? 'video' : 'image',
-        transformation: [{ crop: 'limit', width: 720 }],
-      });
-      mediaUrl = result.secure_url;
-      mediaType = isVideo ? StoryMediaType.VIDEO : StoryMediaType.IMAGE;
-    }
-
-    const story = this.storyRepository.create({
-      userId,
-      schoolId: user.schoolId,
-      mediaUrl,
-      mediaType,
-      textContent: dto.textContent ?? null,
-      expiresAt: new Date(Date.now() + STORY_TTL_MS),
-    });
-    return this.storyRepository.save(story);
+async create(userId: string, dto: CreateStoryDto, file?: Express.Multer.File): Promise<Story> {
+  const user = await this.usersService.findById(userId);
+  if (!user) {
+    throw new NotFoundException('User not found');
+  }
+  if (!file && !dto.textContent) {
+    throw new BadRequestException('A story needs either media or text content');
   }
 
-  async getFeed(userId: string): Promise<Story[]> {
+  let mediaUrl: string | null = null;
+  let mediaType = StoryMediaType.TEXT;
+
+  if (file) {
+    const isVideo = file.mimetype.startsWith('video/');
+    const result = await this.cloudinaryService.uploadFile(file, {
+      folder: 'stories',
+      resourceType: isVideo ? 'video' : 'image',
+      transformation: [{ crop: 'limit', width: 720 }],
+    });
+    mediaUrl = result.secure_url;
+    mediaType = isVideo ? StoryMediaType.VIDEO : StoryMediaType.IMAGE;
+  }
+
+  const story = this.storyRepository.create({
+    userId,
+    schoolId: user.schoolId,
+    mediaUrl,
+    mediaType,
+    textContent: dto.textContent ?? null,
+    backgroundColor: dto.backgroundColor ?? null,
+    textAlign: dto.textAlign ?? 'center',       
+    expiresAt: new Date(Date.now() + STORY_TTL_MS),
+  });
+  
+  return this.storyRepository.save(story);
+}
+
+
+async getFeed(userId: string): Promise<any[]> {
     const blockedUserIds = await this.followsService.getBlockedUserIds(userId);
 
     const qb = this.storyRepository
       .createQueryBuilder('story')
+      .leftJoin('story.user', 'user') 
+      // Select columns explicitly to exclude user.password entirely
+      .addSelect([
+        'story.id',
+        'story.mediaUrl',
+        'story.mediaType',
+        'story.textContent',
+        'story.backgroundColor',
+        'story.textAlign',
+        'story.createdAt',
+        'story.expiresAt',
+        'story.userId',
+        'user.id',
+        'user.username',
+        'user.firstName',
+        'user.lastName',
+        'user.profilePictureUrl',
+      ])
       .where('story.expiresAt > :now', { now: new Date() })
       .andWhere('story.deletedAt IS NULL')
       .orderBy('story.createdAt', 'DESC');
@@ -95,9 +118,49 @@ export class StoriesService {
 
     const stories = await qb.getMany();
 
-    // "Your Story" first, matching the composer rail in the mockup.
-    const mine = stories.filter((s) => s.userId === userId);
-    const others = stories.filter((s) => s.userId !== userId);
+    // 1. Extract unique user IDs from the active feed
+    const userIds = [...new Set(stories.map((s) => s.userId))];
+
+    // 2. Fetch all user levels concurrently in parallel batches
+    const levelMapArray = await Promise.all(
+      userIds.map(async (id) => {
+        try {
+          const stats = await this.gamificationService.getMe(id);
+          return { id, level: stats?.level ?? 1 };
+        } catch (error) {
+          console.error(`Failed to load gamification metrics for user ID ${id}:`, error);
+          return { id, level: 1 }; // Safe default fallback
+        }
+      }),
+    );
+
+    // 3. Convert array map into a key-value look-up dictionary
+    const levelLookup = levelMapArray.reduce((acc, current) => {
+      acc[current.id] = current.level as number;
+      return acc;
+    }, {} as Record<string, number>);
+
+    // 4. Inject resolved gamification levels via clean object spreading
+    const storiesWithLevel = stories.map((story) => {
+      if (story.user) {
+        return {
+          ...story,
+          user: {
+            ...story.user,
+            level: levelLookup[story.userId] ?? 1,
+          },
+        };
+      }
+      return {
+        ...story,
+        user: null,
+      };
+    });
+
+    // 5. Prioritize "Your Story" items to head positions
+    const mine = storiesWithLevel.filter((s) => s.userId === userId);
+    const others = storiesWithLevel.filter((s) => s.userId !== userId);
+    
     return [...mine, ...others];
   }
 

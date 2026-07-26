@@ -1,10 +1,11 @@
-import { Body, Controller, Delete, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PostsService } from './posts.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { ReportContentDto } from './dto/report-content.dto';
+import { CursorPaginationDto } from 'src/common/pagination/cursor-pagination.dto';
 
 @ApiTags('Comments')
 @Controller('comments')
@@ -17,6 +18,17 @@ export class CommentsController {
   @ApiOperation({ summary: 'Reply to a comment' })
   async reply(@CurrentUser('userId') userId: string, @Param('id') id: string, @Body() dto: CreateCommentDto) {
     return this.postsService.replyToComment(userId, id, dto);
+  }
+
+
+  @Get('comments/:commentId/replies')
+  @HttpCode(HttpStatus.OK)
+  async getReplies(
+    @CurrentUser('userId') userId: string,
+    @Param('commentId') commentId: string,
+    @Query() paginationDto: CursorPaginationDto,
+  ) {
+    return this.postsService.getReplies(userId, commentId, paginationDto);
   }
 
   @Delete(':id')

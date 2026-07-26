@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { GamificationService } from './gamification.service';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { GamificationService, LeaderboardScope } from './gamification.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
@@ -23,13 +23,66 @@ export class GamificationController {
     return this.gamificationService.getLevels();
   }
 
-  @Get('leaderboard')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiQuery({ name: 'type', enum: ['givers'], required: false })
-  @ApiOperation({ summary: 'Top givers leaderboard' })
-  async getLeaderboard() {
-    return this.gamificationService.getGiverLeaderboard();
+@Get('leaderboard/givers')
+  @ApiOperation({
+    summary: 'Get top givers leaderboard',
+    description:
+      'Retrieves the leaderboard of top gift senders scoped by department, faculty, school, or global app level.',
+  })
+  @ApiQuery({
+    name: 'scope',
+    enum: LeaderboardScope,
+    required: false,
+    example: LeaderboardScope.APP,
+    description: 'The scope of the leaderboard (department, faculty, school, app)',
+  })
+  @ApiQuery({
+    name: 'departmentId',
+    type: String,
+    required: false,
+    description: 'Required if scope is set to "department"',
+  })
+  @ApiQuery({
+    name: 'facultyId',
+    type: String,
+    required: false,
+    description: 'Required if scope is set to "faculty"',
+  })
+  @ApiQuery({
+    name: 'schoolId',
+    type: String,
+    required: false,
+    description: 'Required if scope is set to "school"',
+  })
+  @ApiQuery({
+    name: 'limit',
+    type: Number,
+    required: false,
+    example: 20,
+    description: 'Number of top givers to return (default: 20)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Successfully fetched top givers leaderboard.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad Request - Missing scope target ID (e.g. departmentId).',
+  })
+  async getGiverLeaderboard(
+    @Query('scope') scope: LeaderboardScope = LeaderboardScope.APP,
+    @Query('departmentId') departmentId?: string,
+    @Query('facultyId') facultyId?: string,
+    @Query('schoolId') schoolId?: string,
+    @Query('limit') limit?: number,
+  ) {
+    return this.gamificationService.getGiverLeaderboard({
+      scope,
+      departmentId,
+      facultyId,
+      schoolId,
+      limit: limit ? Number(limit) : 20,
+    });
   }
 
   @Post('seed-levels')

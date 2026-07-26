@@ -8,12 +8,34 @@ import { In, Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { Follow } from 'src/follows/entities/follow.entity';
 
+import { Post } from 'src/posts/entities/post.entity';
+import { GiftTransaction } from 'src/gifts/entities/gift-transaction.entity';
+import { PostLike } from 'src/posts/entities/post-like.entity';
+export interface UserProfileStats {
+  postsCount: number;
+  likesCount: number;
+  followersCount: number;
+  followingCount: number;
+  giftsCount: number;
+}
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Post)
+    private readonly postRepository: Repository<Post>,
+
+    @InjectRepository(Follow)
+    private readonly followRepository: Repository<Follow>,
+
+    @InjectRepository(PostLike)
+    private readonly likeRepository: Repository<PostLike>,
+
+    @InjectRepository(GiftTransaction)
+    private readonly giftRepository: Repository<GiftTransaction>,
   ) {}
 
   async create(data: Partial<User>): Promise<User> {
@@ -59,6 +81,38 @@ export class UsersService {
       order: { createdAt: 'DESC' },
     });
   }
+
+
+  /**
+   * Get total number of posts, likes received, followers, following, and gifts received for a user.
+   */
+async getUserStats(userId: string): Promise<UserProfileStats> {
+  const [
+    postsCount,
+    followersCount,
+    followingCount,
+    giftsCount,
+    likesCountResult,
+  ] = await Promise.all([
+    this.postRepository.count({ where: { userId } }),
+    this.followRepository.count({ where: { followingId: userId } }),
+    this.followRepository.count({ where: { followerId: userId } }),
+    this.giftRepository.count({ where: { recipientId: userId } }),
+    this.likeRepository
+      .createQueryBuilder('like')
+      .innerJoin('like.post', 'post')
+      .where('post.userId = :userId', { userId })
+      .getCount(),
+  ]);
+
+  return {
+    postsCount,
+    followersCount,
+    followingCount,
+    giftsCount,
+    likesCount: likesCountResult,
+  };
+}
 
   async update(id: string, data: Partial<User>): Promise<User> {
     // Fetch without relations: a loaded ManyToOne relation (e.g. `school`) takes
