@@ -13,6 +13,7 @@ import { Follow } from 'src/follows/entities/follow.entity';
 import { Post } from 'src/posts/entities/post.entity';
 import { GiftTransaction } from 'src/gifts/entities/gift-transaction.entity';
 import { PostLike } from 'src/posts/entities/post-like.entity';
+import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 export interface UserProfileStats {
   postsCount: number;
   likesCount: number;
@@ -36,6 +37,7 @@ export class UsersService {
 
     @InjectRepository(GiftTransaction)
     private readonly giftRepository: Repository<GiftTransaction>,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
   async create(data: Partial<User>): Promise<User> {
@@ -152,10 +154,28 @@ async getUserStats(userId: string): Promise<UserProfileStats> {
     await this.userRepository.remove(user);
   }
 
-  async updateProfile(userId: string, dto: UpdateProfileDto): Promise<User> {
-    return this.update(userId, {
-      ...dto,
-      dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
+ async updateProfile(
+  userId: string,
+  dto: UpdateProfileDto,
+  file?: Express.Multer.File,
+): Promise<User> {
+  let profilePictureUrl = dto.profilePictureUrl;
+
+  // If an image file was attached in the request, upload it to Cloudinary
+  if (file) {
+    const uploadResult = await this.cloudinaryService.uploadFile(file, {
+      folder: 'school-social/profile-pictures',
+      resourceType: 'image',
     });
+    profilePictureUrl = uploadResult.secure_url;
   }
+
+  return this.update(userId, {
+    ...dto,
+    dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
+    profilePictureUrl,
+  });
+}
+
+
 }

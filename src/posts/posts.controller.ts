@@ -12,6 +12,7 @@ import {
   UploadedFiles,
   UseGuards,
   UseInterceptors,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -179,6 +180,26 @@ export class PostsController {
   ) {
     return this.postsService.getComments(userId, id, pagination);
   }
+
+
+  @Get('users/:userId/videos')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get paginated public video posts by a specific user' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Paginated user video posts retrieved successfully.',
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid UUID or query parameters provided.',
+  })
+  async getUserPublicVideos(
+    @Param('userId', new ParseUUIDPipe({ version: '4' })) userId: string,
+    @Query() paginationDto: CursorPaginationDto,
+  ) {
+    return this.postsService.getUserPublicVideos(userId, paginationDto);
+  }
+
 
   @HttpPost(':id/reshare')
   @ApiOperation({ summary: 'Reshare a post' })

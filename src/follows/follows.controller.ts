@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { FollowsService } from './follows.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -27,17 +27,39 @@ export class FollowsController {
     return { following: false };
   }
 
-  @Get(':id/followers')
-  @ApiOperation({ summary: "List a user's followers" })
-  async getFollowers(@Param('id') id: string) {
-    return this.followsService.getFollowers(id);
-  }
+@Get(':userId/followers')
+async getFollowers(
+  @Param('userId') targetUserId: string,
+  @CurrentUser('userId') currentUserId: string,
+  @Query('search') search?: string,
+  @Query('limit') limit?: number,
+  @Query('cursor') cursor?: string,
+) {
+  return this.followsService.getFollowers(
+    targetUserId,
+    currentUserId,
+    search,
+    limit ? Number(limit) : 20,
+    cursor,
+  );
+}
 
-  @Get(':id/following')
-  @ApiOperation({ summary: 'List who a user is following' })
-  async getFollowing(@Param('id') id: string) {
-    return this.followsService.getFollowing(id);
-  }
+@Get(':userId/following')
+async getFollowing(
+  @Param('userId') targetUserId: string,
+  @CurrentUser('userId') currentUserId: string,
+  @Query('search') search?: string,
+  @Query('limit') limit?: number,
+  @Query('cursor') cursor?: string,
+) {
+  return this.followsService.getFollowing(
+    targetUserId,
+    currentUserId,
+    search,
+    limit ? Number(limit) : 20,
+    cursor,
+  );
+}
 
   @Post(':id/block')
   @ApiOperation({ summary: 'Block a user' })

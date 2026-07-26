@@ -60,6 +60,8 @@ export class User {
 
   @Column({ type: 'varchar', length: 100, nullable: true })
   lastName: string;
+   @Column({ type: 'varchar', length: 100, nullable: true })
+  bio: string;
 
   @Column({ type: 'varchar', length: 50, nullable: true, unique: true })
   username: string;

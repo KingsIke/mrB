@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { In, Repository } from "typeorm";
 import {
   Post,
   PostStatus,
@@ -182,13 +182,13 @@ export class PostsService {
     }
 
     const fullPost = await this.getPostOrThrow(saved.id);
-      
-      // Real-time broadcast post creation
-      this.postsGateway.broadcastToFeed(
-        PostWebSocketEvents.POST_CREATED,
-        fullPost,
-      );
-    
+
+    // Real-time broadcast post creation
+    this.postsGateway.broadcastToFeed(
+      PostWebSocketEvents.POST_CREATED,
+      fullPost,
+    );
+
     return saved;
   }
 
@@ -266,7 +266,9 @@ export class PostsService {
     }
     await this.postRepository.remove(post);
     // Real-time broadcast post removal
-    this.postsGateway.broadcastToFeed(PostWebSocketEvents.POST_DELETED, { postId: id });
+    this.postsGateway.broadcastToFeed(PostWebSocketEvents.POST_DELETED, {
+      postId: id,
+    });
   }
 
   async hide(userId: string, id: string): Promise<Post> {
@@ -476,7 +478,7 @@ export class PostsService {
 
   // --- Feed ---
 
-  async getFeed(
+async getFeed(
     userId: string,
     query: FeedQueryDto,
   ): Promise<CursorPaginated<Post>> {
@@ -487,20 +489,26 @@ export class PostsService {
       .createQueryBuilder("post")
       .leftJoinAndSelect("post.media", "media")
       .leftJoin("post.user", "user")
+      .leftJoin("user.department", "department")
+      .leftJoin("user.faculty", "faculty")
+      .leftJoin("user.school", "school")
       .addSelect([
         "user.id",
         "user.firstName",
         "user.lastName",
         "user.username",
         "user.profilePictureUrl",
+        "user.departmentId",
+        "user.facultyId",
+        "user.schoolId",
+        // Academic entity details
+        "department.id",
+        "department.name",
+        "faculty.id",
+        "faculty.name",
+        "school.id",
+        "school.name",
       ])
-      .leftJoin(
-        PostLike,
-        "postLike",
-        "postLike.postId = post.id AND postLike.userId = :userId",
-        { userId },
-      )
-      .addSelect("COUNT(postLike.id) > 0", "post_isLiked")
       .where("post.status = :status", { status: PostStatus.PUBLISHED })
       .andWhere("post.isHidden = false");
 
@@ -517,8 +525,11 @@ export class PostsService {
         schoolId: user?.schoolId ?? null,
       });
     } else if (tab === FeedTab.FOLLOWING) {
-      const following = await this.followsService.getFollowing(userId);
-      const followingIds = following.map((f) => f.followingId);
+      // Fix: Extract items array from PaginatedFollowResponse
+      const followingResponse = await this.followsService.getFollowing(userId);
+      const followingList = followingResponse.items ?? []; // Adjust `.items` if property name differs (e.g., .data)
+
+      const followingIds = followingList.map((f) => f.id);
       if (followingIds.length === 0) {
         return { items: [], nextCursor: null };
       }
@@ -529,60 +540,135 @@ export class PostsService {
       const { createdAt, id } = decodeCursor(query.cursor);
       qb.andWhere(
         "(post.createdAt < :createdAt OR (post.createdAt = :createdAt AND post.id < :id))",
-        {
-          createdAt,
-          id,
-        },
+        { createdAt, id },
       );
     }
-
-    qb.groupBy("post.id").addGroupBy("media.id").addGroupBy("user.id");
 
     qb.orderBy("post.createdAt", "DESC")
       .addOrderBy("post.id", "DESC")
       .take(limit + 1);
 
-    const { entities, raw } = await qb.getRawAndEntities();
+    const posts = await qb.getMany();
 
-    const fullPage = entities.map((entity, index) => {
-      const rawLiked = raw[index]?.post_isLiked;
-      (entity as any).isLiked =
-        rawLiked === true || rawLiked === "1" || parseInt(rawLiked) > 0;
-      return entity;
-    });
-
-    const hasMore = fullPage.length > limit;
-    const items = hasMore ? fullPage.slice(0, limit) : fullPage;
+    const hasMore = posts.length > limit;
+    const items = hasMore ? posts.slice(0, limit) : posts;
     const last = items[items.length - 1];
 
-    const userIds = [
-      ...new Set(items.map((post) => post.user?.id).filter(Boolean)),
-    ];
+    if (items.length > 0) {
+      const postIds = items.map((post) => post.id);
 
-    if (userIds.length > 0) {
-      const levelMapArray = await Promise.all(
-        userIds.map(async (id) => {
-          const stats = await this.gamificationService.getMe(id);
-          return { id, level: stats.level };
-        }),
-      );
+      // 1. Batch check likes
+      const userLikes = await this.postLikeRepository.find({
+        where: {
+          userId,
+          postId: In(postIds),
+        },
+        select: ["postId"],
+      });
+      const likedPostIds = new Set(userLikes.map((like) => like.postId));
+
+      // 2. Extract author IDs
+      const userIds = [
+        ...new Set(items.map((post) => post.user?.id).filter(Boolean)),
+      ];
+
+      // 3. Batch check follow status & fetch gamification levels
+      const [followingIdsSet, levelMapArray] = await Promise.all([
+        this.followsService.getFollowingIdsSet(userId, userIds),
+        // If your gamificationService supports batching, use a single query here.
+        // Fallback to Promise.all if single fetch isn't supported yet.
+        Promise.all(
+          userIds.map(async (id) => {
+            const stats = await this.gamificationService.getMe(id);
+            return { id, level: stats.level };
+          }),
+        ),
+      ]);
 
       const levelLookup = Object.fromEntries(
         levelMapArray.map((x) => [x.id, x.level]),
       );
 
+      // 4. Attach computed properties (`isLiked`, `isFollowing`, & `appLevel`)
       items.forEach((post) => {
-        if (post.user && levelLookup[post.user.id]) {
-          (post.user as any).appLevel = levelLookup[post.user.id];
+        (post as any).isLiked = likedPostIds.has(post.id);
+
+        if (post.user) {
+          const isFollowingAuthor = followingIdsSet.has(post.user.id);
+
+          (post.user as any).isFollowing = isFollowingAuthor;
+
+          if (levelLookup[post.user.id]) {
+            (post.user as any).appLevel = levelLookup[post.user.id];
+          }
         }
       });
     }
 
+    const nextCursor =
+      hasMore && last ? encodeCursor(last.createdAt, last.id) : null;
+
     return {
       items,
-      nextCursor:
-        hasMore && last ? encodeCursor(last.createdAt, last.id) : null,
+      nextCursor,
     };
+  }
+
+  /**
+   * Get all public video posts published by a specific user.
+   */
+  async getUserPublicVideos(
+    userId: string,
+    paginationDto: CursorPaginationDto,
+  ): Promise<CursorPaginated<Post>> {
+    const { limit = 10, cursor } = paginationDto;
+
+    const query = this.postRepository
+      .createQueryBuilder("post")
+      .leftJoinAndSelect("post.media", "media")
+      .leftJoinAndSelect("post.tags", "tags")
+      .leftJoinAndSelect("post.user", "user")
+      .where("post.userId = :userId", { userId })
+      .andWhere("post.status = :status", { status: PostStatus.PUBLISHED })
+      .andWhere("post.type IN (:...videoTypes)", {
+        videoTypes: [PostType.VIDEO, PostType.MIXED],
+      })
+      .orderBy("post.createdAt", "DESC");
+
+    if (cursor) {
+      const decoded = decodeCursor(cursor);
+      if (decoded) {
+        query.andWhere(
+          "(post.createdAt < :createdAt OR (post.createdAt = :createdAt AND post.id < :id))",
+          {
+            createdAt: decoded.createdAt,
+            id: decoded.id,
+          },
+        );
+      }
+    }
+
+    query.take(limit + 1);
+
+    const items = await query.getMany();
+    const hasNextPage = items.length > limit;
+
+    if (hasNextPage) {
+      items.pop();
+    }
+
+    const nextCursor =
+      hasNextPage && items.length > 0
+        ? encodeCursor(
+            items[items.length - 1].createdAt,
+            items[items.length - 1].id,
+          )
+        : null;
+
+    return {
+      items,
+      nextCursor,
+    } as CursorPaginated<Post>;
   }
 
   // --- Likes ---
@@ -614,7 +700,11 @@ export class PostsService {
 
     const payload = { postId, likesCount: post.likesCount + 1, userId };
     this.postsGateway.broadcastToFeed(PostWebSocketEvents.POST_LIKED, payload);
-    this.postsGateway.broadcastToPostRoom(postId, PostWebSocketEvents.POST_LIKED, payload);
+    this.postsGateway.broadcastToPostRoom(
+      postId,
+      PostWebSocketEvents.POST_LIKED,
+      payload,
+    );
   }
 
   async unlikePost(userId: string, postId: string): Promise<void> {
@@ -627,10 +717,21 @@ export class PostsService {
     await this.postRepository.decrement({ id: postId }, "likesCount", 1);
 
     const post = await this.getPostOrThrow(postId);
-    const payload = { postId, likesCount: Math.max(0, post.likesCount - 1), userId };
-    
-    this.postsGateway.broadcastToFeed(PostWebSocketEvents.POST_UNLIKED, payload);
-    this.postsGateway.broadcastToPostRoom(postId, PostWebSocketEvents.POST_UNLIKED, payload);
+    const payload = {
+      postId,
+      likesCount: Math.max(0, post.likesCount - 1),
+      userId,
+    };
+
+    this.postsGateway.broadcastToFeed(
+      PostWebSocketEvents.POST_UNLIKED,
+      payload,
+    );
+    this.postsGateway.broadcastToPostRoom(
+      postId,
+      PostWebSocketEvents.POST_UNLIKED,
+      payload,
+    );
   }
 
   // --- Comments ---
@@ -658,7 +759,7 @@ export class PostsService {
     }
   }
 
- // --- Comments ---
+  // --- Comments ---
 
   async addComment(
     userId: string,
@@ -717,7 +818,9 @@ export class PostsService {
     });
 
     if (!savedComment) {
-      throw new NotFoundException(`Comment with ID "${saved.id}" not found after save`);
+      throw new NotFoundException(
+        `Comment with ID "${saved.id}" not found after save`,
+      );
     }
 
     (savedComment as any).repliesCount = 0;

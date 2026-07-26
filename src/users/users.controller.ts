@@ -10,14 +10,18 @@ import {
   HttpCode,
   HttpStatus,
   NotFoundException,
+  UploadedFile,
+   UseInterceptors,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
+
+import { ApiTags, ApiOperation, ApiResponse,  ApiConsumes,ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { User } from './entities/user.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-
+import { memoryStorage } from 'multer';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 @ApiTags('Users')
 @Controller('users')
 @UseGuards(JwtAuthGuard)
@@ -47,18 +51,32 @@ export class UsersController {
   async getMyStats(@CurrentUser('userId') userId: string) {
     return this.usersService.getUserStats(userId);
   }
-
-  @Patch('me')
-  @ApiOperation({ summary: 'Update current user profile' })
-  @ApiResponse({ status: 200, description: 'Profile updated', type: User })
-  async updateMe(
-    @CurrentUser('userId') userId: string,
-    @Body() dto: UpdateProfileDto,
-  ) {
-    const user = await this.usersService.updateProfile(userId, dto);
-    const { password, ...userWithoutPassword } = user;
-    return userWithoutPassword;
-  }
+@Patch('me')
+@UseGuards(JwtAuthGuard)
+@UseInterceptors(
+  FileInterceptor('profilePicture', {
+    storage: memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 }, 
+    fileFilter: (req, file, callback) => {
+      const allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
+      if (allowedMimes.includes(file.mimetype)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Only image files (JPEG, PNG, WebP) are allowed'), false);
+      }
+    },
+  }),
+)
+@ApiConsumes('multipart/form-data', 'application/json')
+async updateMe(
+  @CurrentUser('userId') userId: string,
+  @Body() dto: UpdateProfileDto,
+  @UploadedFile() file?: Express.Multer.File,
+) {
+  const user = await this.usersService.updateProfile(userId, dto, file);
+  const { password, ...userWithoutPassword } = user;
+  return userWithoutPassword;
+}
 
   @Get()
   @ApiOperation({ summary: 'Get all users (admin)' })
