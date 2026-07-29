@@ -15,6 +15,7 @@ export enum GroupType {
   FACULTY = 'faculty',
   DEPARTMENT = 'department',
   CUSTOM = 'custom',
+  DIRECT = 'direct',
 }
 
 @Entity('groups')
@@ -23,8 +24,8 @@ export class Group {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'varchar', length: 100 })
-  name: string;
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  name: string | null;
 
   @Column({ type: 'varchar', length: 500, nullable: true })
   iconUrl: string | null;
@@ -35,7 +36,7 @@ export class Group {
   @Column({ type: 'enum', enum: GroupType, default: GroupType.CUSTOM })
   type: GroupType;
 
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'varchar', length: 200, nullable: true })
   sourceId: string | null;
 
   @Column({ type: 'boolean', default: false })

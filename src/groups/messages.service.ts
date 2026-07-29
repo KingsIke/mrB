@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { Group } from './entities/group.entity';
+import { Group, GroupType } from './entities/group.entity';
 import { GroupMember } from './entities/group-member.entity';
 import { GroupMessage } from './entities/group-message.entity';
 import { MessageAttachment, AttachmentType } from './entities/message-attachment.entity';
@@ -10,6 +10,7 @@ import { SendMessageDto } from './dto/send-message.dto';
 import { EditMessageDto } from './dto/edit-message.dto';
 import { AddReactionDto } from './dto/add-reaction.dto';
 import { CloudinaryService, CloudinaryResourceType } from '../cloudinary/cloudinary.service';
+import { FollowsService } from '../follows/follows.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationTargetType, NotificationType } from '../notifications/entities/notification.entity';
 import { resolveAttachmentType } from '../common/multer/message-attachment-upload.config';
@@ -36,6 +37,7 @@ export class MessagesService {
     @InjectRepository(MessageReaction)
     private readonly reactionRepository: Repository<MessageReaction>,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly followsService: FollowsService,
     private readonly notificationsService: NotificationsService,
     private readonly groupsService: GroupsService,
     private readonly groupsGateway: GroupsGateway,
@@ -97,6 +99,14 @@ export class MessagesService {
       }
     }
 
+    if (group.type === GroupType.DIRECT) {
+      const otherMembers = await this.groupMemberRepository.find({ where: { groupId } });
+      const other = otherMembers.find((m) => m.userId !== userId);
+      if (other && (await this.followsService.isBlocked(userId, other.userId))) {
+        throw new ForbiddenException('You cannot message this user');
+      }
+    }
+
     if (!dto.content?.trim() && files.length === 0) {
       throw new BadRequestException('Message must have content or an attachment');
     }
@@ -132,6 +142,10 @@ export class MessagesService {
     const saved = await this.messageRepository.save(message);
 
     await this.groupRepository.update({ id: groupId }, { lastMessageAt: new Date() });
+
+    if (group.type === GroupType.DIRECT) {
+      await this.groupMemberRepository.update({ groupId }, { isHidden: false });
+    }
 
     const fullMessage = await this.getMessageOrThrow(saved.id);
     this.groupsGateway.broadcastToGroup(groupId, GroupWebSocketEvents.MESSAGE_NEW, fullMessage);
