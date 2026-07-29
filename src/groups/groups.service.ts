@@ -1,6 +1,6 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Group, GroupType } from './entities/group.entity';
 import { GroupMember, GroupMemberRole } from './entities/group-member.entity';
 import { CreateGroupDto } from './dto/create-group.dto';
@@ -10,7 +10,16 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { SchoolsService } from '../schools/schools.service';
 import { FacultiesService } from '../faculties/faculties.service';
 import { DepartmentsService } from '../departments/departments.service';
+import { FollowsService } from '../follows/follows.service';
 import { GroupsGateway, GroupWebSocketEvents } from './groups.gateway';
+
+export interface UserSummary {
+  id: string;
+  firstName: string;
+  lastName: string;
+  username: string;
+  profilePictureUrl: string | null;
+}
 
 @Injectable()
 export class GroupsService {
@@ -23,6 +32,7 @@ export class GroupsService {
     private readonly schoolsService: SchoolsService,
     private readonly facultiesService: FacultiesService,
     private readonly departmentsService: DepartmentsService,
+    private readonly followsService: FollowsService,
     private readonly groupsGateway: GroupsGateway,
   ) {}
 
@@ -153,8 +163,8 @@ export class GroupsService {
     const group = await this.getGroupOrThrow(groupId);
     await this.getMembershipOrThrow(groupId, userId);
 
-    if (group.isSystemManaged) {
-      throw new ForbiddenException('Official groups cannot be renamed or re-branded');
+    if (group.type !== GroupType.CUSTOM) {
+      throw new ForbiddenException('Only custom groups can be renamed or re-branded');
     }
 
     if (dto.name !== undefined) group.name = dto.name;
@@ -176,6 +186,9 @@ export class GroupsService {
 
   async lockMessages(userId: string, groupId: string, dto: LockGroupDto): Promise<Group> {
     const group = await this.getGroupOrThrow(groupId);
+    if (group.type !== GroupType.CUSTOM) {
+      throw new ForbiddenException('Only custom groups can be locked');
+    }
     const isAdmin = await this.isAdmin(groupId, userId);
     if (!isAdmin) {
       throw new ForbiddenException('Only a group admin can lock or unlock this group');
@@ -197,6 +210,9 @@ export class GroupsService {
 
   async addMember(actingUserId: string, groupId: string, targetUserId: string): Promise<GroupMember> {
     const group = await this.getGroupOrThrow(groupId);
+    if (group.type !== GroupType.CUSTOM) {
+      throw new ForbiddenException('Members can only be added to custom groups');
+    }
     const isAdmin = await this.isAdmin(groupId, actingUserId);
     if (!isAdmin) {
       throw new ForbiddenException('Only a group admin can add members');
@@ -216,7 +232,10 @@ export class GroupsService {
   }
 
   async removeMember(actingUserId: string, groupId: string, targetUserId: string): Promise<void> {
-    await this.getGroupOrThrow(groupId);
+    const group = await this.getGroupOrThrow(groupId);
+    if (group.type !== GroupType.CUSTOM) {
+      throw new ForbiddenException('Members can only be removed from custom groups');
+    }
     const isAdmin = await this.isAdmin(groupId, actingUserId);
     if (!isAdmin) {
       throw new ForbiddenException('Only a group admin can remove members');
@@ -241,8 +260,8 @@ export class GroupsService {
 
   async leaveGroup(userId: string, groupId: string): Promise<void> {
     const group = await this.getGroupOrThrow(groupId);
-    if (group.isSystemManaged) {
-      throw new ForbiddenException('You cannot leave your official school/faculty/department group');
+    if (group.type !== GroupType.CUSTOM) {
+      throw new ForbiddenException('You cannot leave this group');
     }
 
     const membership = await this.getMembershipOrThrow(groupId, userId);
@@ -285,5 +304,93 @@ export class GroupsService {
       relations: { user: true },
       order: { joinedAt: 'ASC' },
     });
+  }
+
+  // --- Direct messages (1:1 conversations) ---
+
+  async getOrCreateDirectConversation(userId: string, otherUserId: string): Promise<Group> {
+    if (userId === otherUserId) {
+      throw new BadRequestException('You cannot start a conversation with yourself');
+    }
+
+    const isBlocked = await this.followsService.isBlocked(userId, otherUserId);
+    if (isBlocked) {
+      throw new ForbiddenException('You cannot message this user');
+    }
+
+    const pairKey = [userId, otherUserId].sort().join(':');
+
+    let group = await this.groupRepository.findOne({ where: { type: GroupType.DIRECT, sourceId: pairKey } });
+    if (!group) {
+      try {
+        group = await this.groupRepository.save(
+          this.groupRepository.create({ type: GroupType.DIRECT, sourceId: pairKey, name: null }),
+        );
+      } catch (error: any) {
+        if (error.code === '23505') {
+          group = await this.groupRepository.findOne({ where: { type: GroupType.DIRECT, sourceId: pairKey } });
+        }
+        if (!group) throw error;
+      }
+    }
+
+    for (const participantId of [userId, otherUserId]) {
+      const existingMembership = await this.groupMemberRepository.findOne({
+        where: { groupId: group.id, userId: participantId },
+      });
+      if (!existingMembership) {
+        await this.groupMemberRepository.save(
+          this.groupMemberRepository.create({ groupId: group.id, userId: participantId, role: GroupMemberRole.MEMBER }),
+        );
+        await this.groupRepository.increment({ id: group.id }, 'membersCount', 1);
+      } else if (participantId === userId && existingMembership.isHidden) {
+        existingMembership.isHidden = false;
+        await this.groupMemberRepository.save(existingMembership);
+      }
+    }
+
+    return group;
+  }
+
+  async listDirectConversations(userId: string): Promise<Array<Group & { participant: UserSummary | null }>> {
+    const memberships = await this.groupMemberRepository.find({
+      where: { userId, isHidden: false },
+      relations: { group: true },
+    });
+    const directMemberships = memberships.filter((m) => m.group.type === GroupType.DIRECT);
+
+    const groupIds = directMemberships.map((m) => m.group.id);
+    const otherMembers = groupIds.length
+      ? await this.groupMemberRepository.find({
+          where: { groupId: In(groupIds) },
+          relations: { user: true },
+        })
+      : [];
+
+    return directMemberships
+      .map((m) => {
+        const other = otherMembers.find((om) => om.groupId === m.group.id && om.userId !== userId);
+        const participant: UserSummary | null = other?.user
+          ? {
+              id: other.user.id,
+              firstName: other.user.firstName,
+              lastName: other.user.lastName,
+              username: other.user.username,
+              profilePictureUrl: other.user.profilePictureUrl,
+            }
+          : null;
+        return Object.assign(m.group, { participant });
+      })
+      .sort((a, b) => (b.lastMessageAt?.getTime() ?? 0) - (a.lastMessageAt?.getTime() ?? 0));
+  }
+
+  async hideConversation(userId: string, groupId: string): Promise<void> {
+    const group = await this.getGroupOrThrow(groupId);
+    if (group.type !== GroupType.DIRECT) {
+      throw new ForbiddenException('Only direct-message conversations can be hidden');
+    }
+    const membership = await this.getMembershipOrThrow(groupId, userId);
+    membership.isHidden = true;
+    await this.groupMemberRepository.save(membership);
   }
 }

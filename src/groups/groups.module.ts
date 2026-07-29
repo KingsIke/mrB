@@ -6,6 +6,7 @@ import { GroupsService } from './groups.service';
 import { MessagesService } from './messages.service';
 import { GroupsController } from './groups.controller';
 import { MessagesController } from './messages.controller';
+import { DirectMessagesController } from './direct-messages.controller';
 import { GroupsGateway } from './groups.gateway';
 import { Group } from './entities/group.entity';
 import { GroupMember } from './entities/group-member.entity';
@@ -17,6 +18,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { SchoolsModule } from '../schools/schools.module';
 import { FacultiesModule } from '../faculties/faculties.module';
 import { DepartmentsModule } from '../departments/departments.module';
+import { FollowsModule } from '../follows/follows.module';
 
 @Module({
   imports: [
@@ -26,6 +28,7 @@ import { DepartmentsModule } from '../departments/departments.module';
     SchoolsModule,
     FacultiesModule,
     DepartmentsModule,
+    FollowsModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -37,7 +40,7 @@ import { DepartmentsModule } from '../departments/departments.module';
       }),
     }),
   ],
-  controllers: [GroupsController, MessagesController],
+  controllers: [GroupsController, MessagesController, DirectMessagesController],
   providers: [GroupsService, MessagesService, GroupsGateway],
   exports: [GroupsService, MessagesService, GroupsGateway],
 })

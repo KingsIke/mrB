@@ -41,6 +41,9 @@ export class GroupMember {
   @Column({ type: 'boolean', default: false })
   isMuted: boolean;
 
+  @Column({ type: 'boolean', default: false })
+  isHidden: boolean;
+
   @CreateDateColumn({ type: 'timestamptz' })
   joinedAt: Date;
 }
