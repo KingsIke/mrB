@@ -129,6 +129,12 @@ export class User {
   @Column({ type: 'boolean', default: false })
   isOnboardingComplete: boolean;
 
+  @Column({ nullable: true, default: '#007AFF' })
+bubbleColor: string;
+
+@Column({ nullable: true, default: 'default' })
+bubbleStyle: string;
+
   @Column({ type: 'boolean', default: false })
   "emailVerified": boolean;
 

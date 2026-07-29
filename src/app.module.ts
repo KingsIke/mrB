@@ -18,6 +18,7 @@ import { GamificationModule } from './gamification/gamification.module';
 import { CoinsModule } from './coins/coins.module';
 import { GiftsModule } from './gifts/gifts.module';
 import { FollowsModule } from './follows/follows.module';
+import { GroupsModule } from './groups/groups.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { FollowsModule } from './follows/follows.module';
     CoinsModule,
     GiftsModule,
     FollowsModule,
+    GroupsModule,
   ],
 })
 export class AppModule {}

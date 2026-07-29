@@ -30,6 +30,11 @@ import { Gift } from '../gifts/entities/gift.entity';
 import { GiftTransaction } from '../gifts/entities/gift-transaction.entity';
 import { Follow } from '../follows/entities/follow.entity';
 import { UserBlock } from '../follows/entities/user-block.entity';
+import { Group } from '../groups/entities/group.entity';
+import { GroupMember } from '../groups/entities/group-member.entity';
+import { GroupMessage } from '../groups/entities/group-message.entity';
+import { MessageAttachment } from '../groups/entities/message-attachment.entity';
+import { MessageReaction } from '../groups/entities/message-reaction.entity';
 
 export const databaseConfig: TypeOrmModuleAsyncOptions = {
   imports: [ConfigModule],
@@ -72,6 +77,11 @@ export const databaseConfig: TypeOrmModuleAsyncOptions = {
       GiftTransaction,
       Follow,
       UserBlock,
+      Group,
+      GroupMember,
+      GroupMessage,
+      MessageAttachment,
+      MessageReaction,
     ],
     synchronize: configService.get('NODE_ENV') !== 'production',
     logging: configService.get('NODE_ENV') === 'development',

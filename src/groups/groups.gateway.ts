@@ -1,0 +1,204 @@
+import {
+  WebSocketGateway,
+  WebSocketServer,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+  SubscribeMessage,
+  MessageBody,
+  ConnectedSocket,
+} from '@nestjs/websockets';
+import { Server, Socket } from 'socket.io';
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+import { GroupMember } from './entities/group-member.entity';
+import { verifySocketToken } from '../auth/guards/ws-jwt.guard';
+
+export enum GroupWebSocketEvents {
+  MESSAGE_NEW = 'message:new',
+  MESSAGE_EDITED = 'message:edited',
+  MESSAGE_DELETED = 'message:deleted',
+  REACTION_ADDED = 'reaction:added',
+  REACTION_REMOVED = 'reaction:removed',
+  MEMBER_ADDED = 'member:added',
+  MEMBER_REMOVED = 'member:removed',
+  GROUP_UPDATED = 'group:updated',
+  UNREAD_COUNT_UPDATED = 'unread_count:updated',
+  // Presence & Typing Events
+  USER_JOINED = 'user:joined',
+  USER_LEFT = 'user:left',
+  ONLINE_LIST = 'user:online_list',
+  USER_TYPING = 'user:typing',
+}
+
+@Injectable()
+@WebSocketGateway({
+  cors: {
+    origin: '*',
+  },
+  namespace: '/groups',
+})
+export class GroupsGateway implements OnGatewayConnection, OnGatewayDisconnect {
+  @WebSocketServer()
+  server!: Server;
+
+  private readonly logger = new Logger(GroupsGateway.name);
+
+  // Maps groupId -> Set of online userIds in that group
+  private readonly roomOnlineUsers = new Map<string, Set<string>>();
+
+  constructor(
+    @InjectRepository(GroupMember)
+    private readonly groupMemberRepository: Repository<GroupMember>,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  async handleConnection(client: Socket) {
+    const payload = await verifySocketToken(client, this.jwtService, this.configService);
+    if (!payload) {
+      this.logger.warn(`Rejected unauthenticated socket: ${client.id}`);
+      client.disconnect(true);
+      return;
+    }
+    client.data.userId = payload.sub;
+    client.data.joinedGroups = new Set<string>();
+
+    // Join personal room so the user receives unread count updates across all devices
+    client.join(`user_${payload.sub}`);
+
+    this.logger.log(`Client connected: ${client.id} (user ${payload.sub})`);
+  }
+
+  handleDisconnect(client: Socket) {
+    const userId = client.data?.userId;
+    const joinedGroups: Set<string> = client.data?.joinedGroups;
+
+    if (userId && joinedGroups) {
+      joinedGroups.forEach((groupId) => {
+        this.removeUserFromRoomPresence(groupId, userId, client);
+      });
+    }
+
+    this.logger.log(`Client disconnected: ${client.id}`);
+  }
+
+  @SubscribeMessage('joinGroup')
+  async handleJoinGroup(
+    @MessageBody() data: { groupId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const userId = client.data?.userId;
+    if (!userId) {
+      return { event: 'error', data: 'Unauthorized' };
+    }
+
+    const membership = await this.groupMemberRepository.findOne({
+      where: { groupId: data.groupId, userId },
+    });
+    if (!membership) {
+      return { event: 'error', data: 'Not a member of this group' };
+    }
+
+    const roomName = `group_${data.groupId}`;
+    client.join(roomName);
+
+    if (client.data.joinedGroups) {
+      client.data.joinedGroups.add(data.groupId);
+    }
+
+    if (!this.roomOnlineUsers.has(data.groupId)) {
+      this.roomOnlineUsers.set(data.groupId, new Set());
+    }
+    const usersSet = this.roomOnlineUsers.get(data.groupId)!;
+    usersSet.add(userId);
+
+    client.emit(GroupWebSocketEvents.ONLINE_LIST, Array.from(usersSet));
+
+    client.to(roomName).emit(GroupWebSocketEvents.USER_JOINED, {
+      userId,
+      groupId: data.groupId,
+    });
+
+    return { event: 'joinedGroup', data: data.groupId };
+  }
+
+  @SubscribeMessage('leaveGroup')
+  handleLeaveGroup(
+    @MessageBody() data: { groupId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const userId = client.data?.userId;
+    if (userId) {
+      this.removeUserFromRoomPresence(data.groupId, userId, client);
+    }
+
+    client.leave(`group_${data.groupId}`);
+    if (client.data.joinedGroups) {
+      client.data.joinedGroups.delete(data.groupId);
+    }
+
+    return { event: 'leftGroup', data: data.groupId };
+  }
+
+  // --- TYPING INDICATORS ---
+
+  @SubscribeMessage('typing:start')
+  handleTypingStart(
+    @MessageBody() data: { groupId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const userId = client.data?.userId;
+    if (!userId) return;
+
+    client.to(`group_${data.groupId}`).emit(GroupWebSocketEvents.USER_TYPING, {
+      groupId: data.groupId,
+      userId,
+      isTyping: true,
+    });
+  }
+
+  @SubscribeMessage('typing:stop')
+  handleTypingStop(
+    @MessageBody() data: { groupId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const userId = client.data?.userId;
+    if (!userId) return;
+
+    client.to(`group_${data.groupId}`).emit(GroupWebSocketEvents.USER_TYPING, {
+      groupId: data.groupId,
+      userId,
+      isTyping: false,
+    });
+  }
+
+  // --- HELPER METHODS ---
+
+  broadcastToGroup(groupId: string, event: GroupWebSocketEvents, payload: any) {
+    this.server.to(`group_${groupId}`).emit(event, payload);
+  }
+
+  sendToUser(userId: string, event: GroupWebSocketEvents, payload: any) {
+    this.server.to(`user_${userId}`).emit(event, payload);
+  }
+
+  private removeUserFromRoomPresence(groupId: string, userId: string, client: Socket) {
+    const roomName = `group_${groupId}`;
+    const usersSet = this.roomOnlineUsers.get(groupId);
+
+    if (usersSet) {
+      usersSet.delete(userId);
+      if (usersSet.size === 0) {
+        this.roomOnlineUsers.delete(groupId);
+      }
+    }
+
+    client.to(roomName).emit(GroupWebSocketEvents.USER_LEFT, {
+      userId,
+      groupId,
+    });
+  }
+}

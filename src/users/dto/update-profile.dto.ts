@@ -83,4 +83,13 @@ export class UpdateProfileDto {
   @IsString()
   @MaxLength(255)
   jambNumber?: string;
+
+
+  @IsOptional()
+  @IsString()
+  bubbleColor?: string;
+
+  @IsOptional()
+  @IsString()
+  bubbleStyle?: string;
 }

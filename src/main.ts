@@ -55,6 +55,8 @@ async function bootstrap() {
     .addTag('Coins', 'Campus Coins balance and Paystack purchases')
     .addTag('Gifts', 'Gift catalog and sending gifts')
     .addTag('Follows', 'Following and blocking other users')
+    .addTag('Groups', 'Group creation, membership, and settings')
+    .addTag('Group Messages', 'Group chat messages, attachments, and reactions')
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);

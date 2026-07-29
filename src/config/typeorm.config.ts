@@ -31,6 +31,11 @@ import { Gift } from '../gifts/entities/gift.entity';
 import { GiftTransaction } from '../gifts/entities/gift-transaction.entity';
 import { Follow } from '../follows/entities/follow.entity';
 import { UserBlock } from '../follows/entities/user-block.entity';
+import { Group } from '../groups/entities/group.entity';
+import { GroupMember } from '../groups/entities/group-member.entity';
+import { GroupMessage } from '../groups/entities/group-message.entity';
+import { MessageAttachment } from '../groups/entities/message-attachment.entity';
+import { MessageReaction } from '../groups/entities/message-reaction.entity';
 
 config();
 
@@ -74,6 +79,11 @@ export default new DataSource({
     GiftTransaction,
     Follow,
     UserBlock,
+    Group,
+    GroupMember,
+    GroupMessage,
+    MessageAttachment,
+    MessageReaction,
   ],
   migrations: ['src/database/migrations/*{.ts,.js}'],
   synchronize: false,
