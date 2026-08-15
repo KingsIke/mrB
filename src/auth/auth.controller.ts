@@ -19,6 +19,8 @@ import { LoginDto } from '../users/dto/login.dto';
 import { VerifyOtpDto } from '../users/dto/verify-otp.dto';
 import { ResendOtpDto } from '../users/dto/resend-otp.dto';
 import { CompleteOnboardingDto, ForgotPasswordDto, ResetPasswordWithTokenDto, VerifyResetOtpDto, } from '../users/dto/onboarding.dto';
+import { ChangePasswordDto } from '../users/dto/change-password.dto';
+import { AccountActionDto } from '../users/dto/account-action.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { memoryStorage } from 'multer';
@@ -81,7 +83,49 @@ export class AuthController {
     return this.authService.resetPassword(resetPasswordDto);
   }
 
-    @Post('login')
+    @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Change password while logged in (returns fresh tokens)' })
+  @ApiResponse({ status: 200, description: 'Password changed successfully, fresh tokens returned' })
+  @ApiResponse({ status: 400, description: 'Current password is incorrect or invalid input' })
+  async changePassword(
+    @CurrentUser('userId') userId: string,
+    @Body() changePasswordDto: ChangePasswordDto,
+  ): Promise<AuthResponse> {
+    return this.authService.changePassword(userId, changePasswordDto);
+  }
+
+  @Post('deactivate-account')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Temporarily deactivate the current account' })
+  @ApiResponse({ status: 200, description: 'Account deactivated' })
+  @ApiResponse({ status: 400, description: 'Current password is incorrect' })
+  async deactivateAccount(
+    @CurrentUser('userId') userId: string,
+    @Body() accountActionDto: AccountActionDto,
+  ) {
+    return this.authService.deactivateAccount(userId, accountActionDto);
+  }
+
+  @Post('delete-account')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Permanently delete the current account' })
+  @ApiResponse({ status: 200, description: 'Account deleted' })
+  @ApiResponse({ status: 400, description: 'Current password is incorrect' })
+  async deleteAccount(
+    @CurrentUser('userId') userId: string,
+    @Body() accountActionDto: AccountActionDto,
+  ) {
+    return this.authService.deleteAccount(userId, accountActionDto);
+  }
+
+  @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiResponse({ status: 200, description: 'Login successful', type: Object })
@@ -140,6 +184,47 @@ export class AuthController {
   ) {
     return this.authService.completeOnboarding(userId, dto, {
       profilePicture: files?.profilePicture?.[0],
+      schoolIdCard: files?.schoolIdCard?.[0],
+      administrationLetter: files?.administrationLetter?.[0],
+    });
+  }
+
+  @Post('student-verification')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'schoolIdCard', maxCount: 1 },
+        { name: 'administrationLetter', maxCount: 1 },
+      ],
+      {
+        storage: memoryStorage(),
+        limits: { fileSize: 5 * 1024 * 1024 },
+        fileFilter: (req, file, callback) => {
+          const allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
+          if (allowedMimes.includes(file.mimetype)) {
+            callback(null, true);
+          } else {
+            callback(new Error('Only image files (JPEG, PNG, WebP) are allowed'), false);
+          }
+        },
+      },
+    ),
+  )
+  @ApiBearerAuth()
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Submit documents for student verification' })
+  @ApiResponse({ status: 200, description: 'Verification documents submitted' })
+  @ApiResponse({ status: 400, description: 'Missing documents or invalid input' })
+  async submitStudentVerification(
+    @CurrentUser('userId') userId: string,
+    @UploadedFiles()
+    files: {
+      schoolIdCard?: Express.Multer.File[];
+      administrationLetter?: Express.Multer.File[];
+    },
+  ) {
+    return this.authService.submitStudentVerification(userId, {
       schoolIdCard: files?.schoolIdCard?.[0],
       administrationLetter: files?.administrationLetter?.[0],
     });

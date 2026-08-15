@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch,  Post, UploadedFile, UseGuards, UseInterceptors} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { GroupsService } from './groups.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -36,12 +36,26 @@ export class GroupsController {
     return this.groupsService.listUserGroups(userId);
   }
 
+  @Get('default')
+  @ApiOperation({ summary: 'List all default/preset interest groups' })
+  async getDefaultGroups() {
+    return this.groupsService.getDefaultGroups();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get group detail' })
   async findById(@CurrentUser('userId') userId: string, @Param('id') id: string) {
     return this.groupsService.getGroupDetail(userId, id);
   }
 
+
+  @Post('seed')
+   @ApiOperation({ summary: 'Seed Groups data (dev only)' })
+   @ApiResponse({ status: 201, description: 'Groups seeded' })
+  async seedGroups() {
+    await this.groupsService.seedDefaultGroups();
+    return { message: 'Default groups seeded successfully' };
+  }
 
   @Post(':id/read')
   @HttpCode(HttpStatus.OK)

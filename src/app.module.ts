@@ -19,6 +19,13 @@ import { CoinsModule } from './coins/coins.module';
 import { GiftsModule } from './gifts/gifts.module';
 import { FollowsModule } from './follows/follows.module';
 import { GroupsModule } from './groups/groups.module';
+import { NotesModule } from './notes/notes.module';
+import { HostelsModule } from './hostels/hostels.module';
+import { MarketplaceModule } from './marketplace/marketplace.module';
+import { AiModule } from './ai/ai.module';
+import { EventsModule } from './events/events.module';
+import { PastQuestionsModule } from './past-questions/past-questions.module';
+import { SupportModule } from './support/support.module';
 
 @Module({
   imports: [
@@ -55,6 +62,13 @@ import { GroupsModule } from './groups/groups.module';
     GiftsModule,
     FollowsModule,
     GroupsModule,
+    NotesModule,
+    HostelsModule,
+    MarketplaceModule,
+    AiModule,
+    EventsModule,
+    PastQuestionsModule,
+    SupportModule,
   ],
 })
 export class AppModule {}

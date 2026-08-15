@@ -13,6 +13,7 @@ import {
   UseGuards,
   UseInterceptors,
   ParseUUIDPipe,
+  NotFoundException,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -181,6 +182,39 @@ export class PostsController {
     return this.postsService.getComments(userId, id, pagination);
   }
 
+  @Get('users/:id/profile')
+  @ApiOperation({ summary: 'Get user profile with gamification levels' })
+  @ApiResponse({
+    status: 200,
+    description: 'User profile retrieved successfully',
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async findUserProfile(@Param('id', ParseUUIDPipe) id: string) {
+    const userProfile = await this.postsService.findUserProfileById(id);
+
+    if (!userProfile) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Strip sensitive fields like password
+    const { password, ...userWithoutPassword } = userProfile;
+
+    return userWithoutPassword;
+  }
+
+
+  @Get('users/:userId/posts')
+  @ApiOperation({ summary: 'Get paginated public posts by a specific user' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Paginated user posts retrieved successfully.',
+  })
+  async getUserPublicPosts(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Query() paginationDto: CursorPaginationDto,
+  ) {
+    return this.postsService.getMyPosts(userId, paginationDto);
+  }
 
   @Get('users/:userId/videos')
   @HttpCode(HttpStatus.OK)

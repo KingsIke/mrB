@@ -13,6 +13,36 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 export class FollowsController {
   constructor(private readonly followsService: FollowsService) {}
 
+  @Get(':id/is-following')
+  @ApiOperation({ summary: 'Check if current user is following a target user' })
+  async isFollowing(
+    @CurrentUser('userId') currentUserId: string,
+    @Param('id') targetUserId: string,
+  ) {
+    const isFollowing = await this.followsService.isFollowing(currentUserId, targetUserId);
+    return { isFollowing };
+  }
+
+  @Get(':id/is-blocked')
+  @ApiOperation({ summary: 'Check if a block exists between current user and target user (either direction)' })
+  async isBlocked(
+    @CurrentUser('userId') currentUserId: string,
+    @Param('id') targetUserId: string,
+  ) {
+    const isBlocked = await this.followsService.isBlocked(currentUserId, targetUserId);
+    return { isBlocked };
+  }
+
+  @Get(':id/is-blocker')
+  @ApiOperation({ summary: 'Check if current user specifically blocked the target user' })
+  async isBlocker(
+    @CurrentUser('userId') currentUserId: string,
+    @Param('id') targetUserId: string,
+  ) {
+    const isBlocker = await this.followsService.isBlocker(currentUserId, targetUserId);
+    return { isBlocked: isBlocker };
+  }
+
   @Post(':id/follow')
   @ApiOperation({ summary: 'Follow a user' })
   async follow(@CurrentUser('userId') userId: string, @Param('id') id: string) {
@@ -27,39 +57,41 @@ export class FollowsController {
     return { following: false };
   }
 
-@Get(':userId/followers')
-async getFollowers(
-  @Param('userId') targetUserId: string,
-  @CurrentUser('userId') currentUserId: string,
-  @Query('search') search?: string,
-  @Query('limit') limit?: number,
-  @Query('cursor') cursor?: string,
-) {
-  return this.followsService.getFollowers(
-    targetUserId,
-    currentUserId,
-    search,
-    limit ? Number(limit) : 20,
-    cursor,
-  );
-}
+  @Get(':userId/followers')
+  @ApiOperation({ summary: 'Get paginated followers of a target user' })
+  async getFollowers(
+    @Param('userId') targetUserId: string,
+    @CurrentUser('userId') currentUserId: string,
+    @Query('search') search?: string,
+    @Query('limit') limit?: number,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.followsService.getFollowers(
+      targetUserId,
+      currentUserId,
+      search,
+      limit ? Number(limit) : 20,
+      cursor,
+    );
+  }
 
-@Get(':userId/following')
-async getFollowing(
-  @Param('userId') targetUserId: string,
-  @CurrentUser('userId') currentUserId: string,
-  @Query('search') search?: string,
-  @Query('limit') limit?: number,
-  @Query('cursor') cursor?: string,
-) {
-  return this.followsService.getFollowing(
-    targetUserId,
-    currentUserId,
-    search,
-    limit ? Number(limit) : 20,
-    cursor,
-  );
-}
+  @Get(':userId/following')
+  @ApiOperation({ summary: 'Get paginated users followed by a target user' })
+  async getFollowing(
+    @Param('userId') targetUserId: string,
+    @CurrentUser('userId') currentUserId: string,
+    @Query('search') search?: string,
+    @Query('limit') limit?: number,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.followsService.getFollowing(
+      targetUserId,
+      currentUserId,
+      search,
+      limit ? Number(limit) : 20,
+      cursor,
+    );
+  }
 
   @Post(':id/block')
   @ApiOperation({ summary: 'Block a user' })

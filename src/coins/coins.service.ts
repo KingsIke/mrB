@@ -1,12 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import * as crypto from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { CoinBalance } from './entities/coin-balance.entity';
 import { CoinTransaction, CoinTransactionType } from './entities/coin-transaction.entity';
 import { CoinPurchase, CoinPurchaseStatus } from './entities/coin-purchase.entity';
-import { PurchaseCoinsDto } from './dto/purchase-coins.dto';
+import { PurchaseCoinsDto, ResolveAccountDto } from './dto/purchase-coins.dto';
 import { PaystackClient } from './paystack.client';
 import { UsersService } from '../users/users.service';
 import {
@@ -16,7 +16,7 @@ import {
   encodeCursor,
 } from '../common/pagination/cursor-pagination.dto';
 
-const COIN_RATE_NGN = 10; 
+export const COIN_RATE_NGN = 10; // 1 Coin = 10 NGN
 
 @Injectable()
 export class CoinsService {
@@ -30,6 +30,7 @@ export class CoinsService {
     private readonly paystackClient: PaystackClient,
     private readonly usersService: UsersService,
     private readonly configService: ConfigService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async getOrCreateBalance(userId: string): Promise<CoinBalance> {
@@ -64,7 +65,7 @@ export class CoinsService {
     referenceId?: string,
   ): Promise<CoinBalance> {
     const balance = await this.getOrCreateBalance(userId);
-    balance.balance += amount;
+    balance.balance = Number(balance.balance) + amount;
     await this.coinBalanceRepository.save(balance);
     await this.coinTransactionRepository.save(
       this.coinTransactionRepository.create({
@@ -85,10 +86,10 @@ export class CoinsService {
     referenceId?: string,
   ): Promise<CoinBalance> {
     const balance = await this.getOrCreateBalance(userId);
-    if (balance.balance < amount) {
+    if (Number(balance.balance) < amount) {
       throw new BadRequestException('Insufficient Campus Coins balance');
     }
-    balance.balance -= amount;
+    balance.balance = Number(balance.balance) - amount;
     await this.coinBalanceRepository.save(balance);
     await this.coinTransactionRepository.save(
       this.coinTransactionRepository.create({
@@ -101,6 +102,128 @@ export class CoinsService {
     );
     return balance;
   }
+
+  /** Credits earned gift cash balance (NGN) for recipients */
+  async creditEarnedBalance(
+    userId: string,
+    amountNgn: number,
+    referenceId?: string,
+  ): Promise<CoinBalance> {
+    const balance = await this.getOrCreateBalance(userId);
+    balance.earnedBalance = Number(balance.earnedBalance) + amountNgn;
+    await this.coinBalanceRepository.save(balance);
+
+    await this.coinTransactionRepository.save(
+      this.coinTransactionRepository.create({
+        userId,
+        amount: amountNgn,
+        type: CoinTransactionType.GIFT_RECEIVED,
+        referenceId: referenceId ?? null,
+        balanceAfter: balance.earnedBalance,
+      }),
+    );
+
+    return balance;
+  }
+
+ /** Convert withdrawable cash balance from received gifts into spendable coins */
+  async convertEarnedToCoins(
+    userId: string,
+    amountNgn: number,
+  ): Promise<{ newBalance: CoinBalance; coinsAdded: number; reference: string }> {
+    if (amountNgn <= 0) {
+      throw new BadRequestException('Amount must be greater than zero');
+    }
+
+    const coinsToCredit = Math.floor(amountNgn / COIN_RATE_NGN);
+    if (coinsToCredit <= 0) {
+      throw new BadRequestException(`Minimum conversion amount is ${COIN_RATE_NGN} NGN`);
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      const balanceRepository = manager.getRepository(CoinBalance);
+      const transactionRepository = manager.getRepository(CoinTransaction);
+
+      const balance = await balanceRepository.findOne({ where: { userId } });
+
+      if (!balance || Number(balance.earnedBalance) < amountNgn) {
+        throw new BadRequestException('Insufficient earnings balance');
+      }
+
+      // Generate reference ID for the conversion
+      const reference = `convert_${userId}_${Date.now()}`;
+
+      balance.earnedBalance = Number(balance.earnedBalance) - amountNgn;
+      balance.balance = Number(balance.balance) + coinsToCredit;
+
+      await balanceRepository.save(balance);
+
+      await transactionRepository.save(
+        transactionRepository.create({
+          userId,
+          amount: coinsToCredit,
+          type: CoinTransactionType.CONVERT_EARNINGS,
+          referenceId: reference, // Added reference link here
+          balanceAfter: balance.balance,
+        }),
+      );
+
+      return { newBalance: balance, coinsAdded: coinsToCredit, reference };
+    });
+  }
+
+  /** Initiate cash withdrawal from earned gift balance */
+  async withdrawEarnings(
+    userId: string,
+    amountNgn: number,
+    bankDetails: { bankCode: string; accountNumber: string },
+  ): Promise<{ success: boolean; reference: string }> {
+    if (amountNgn <= 0) {
+      throw new BadRequestException('Amount must be greater than zero');
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      const balanceRepository = manager.getRepository(CoinBalance);
+      const transactionRepository = manager.getRepository(CoinTransaction);
+
+      const balance = await balanceRepository.findOne({ where: { userId } });
+
+      if (!balance || Number(balance.earnedBalance) < amountNgn) {
+        throw new BadRequestException('Insufficient earnings balance for withdrawal');
+      }
+
+      const reference = `withdraw_${userId}_${Date.now()}`;
+
+      balance.earnedBalance = Number(balance.earnedBalance) - amountNgn;
+      await balanceRepository.save(balance);
+
+      await transactionRepository.save(
+        transactionRepository.create({
+          userId,
+          amount: -amountNgn,
+          type: CoinTransactionType.WITHDRAWAL,
+          referenceId: reference,
+          balanceAfter: balance.earnedBalance,
+        }),
+      );
+
+      // Trigger payout integration via Paystack client here if applicable
+      // await this.paystackClient.initiateTransfer(amountNgn, bankDetails, reference);
+
+      return { success: true, reference };
+    });
+  }
+
+  async resolveAccountName(dto: ResolveAccountDto): Promise<{ accountName: string }> {
+  const accountData = await this.paystackClient.resolveAccountNumber(
+    dto.accountNumber,
+    dto.bankCode,
+  );
+
+  return {
+    accountName: accountData.account_name,
+  }
+}
 
   async listTransactions(
     userId: string,
@@ -143,7 +266,7 @@ export class CoinsService {
 
     const { authorizationUrl } = await this.paystackClient.initializeTransaction(
       user.email,
-      Math.round(amountPaid * 100), // Paystack expects the amount in kobo
+      Math.round(amountPaid * 100), 
       reference,
     );
 
@@ -196,9 +319,8 @@ export class CoinsService {
         if (purchase.status !== CoinPurchaseStatus.SUCCESS) return;
         purchase.status = CoinPurchaseStatus.REFUNDED;
         await this.coinPurchaseRepository.save(purchase);
-        // Only claw back coins still available — a user may have already spent them on gifts.
         const balance = await this.getOrCreateBalance(purchase.userId);
-        const clawback = Math.min(balance.balance, purchase.coinsCredited);
+        const clawback = Math.min(Number(balance.balance), purchase.coinsCredited);
         if (clawback > 0) {
           await this.debitBalance(purchase.userId, clawback, CoinTransactionType.REFUND, purchase.id);
         }

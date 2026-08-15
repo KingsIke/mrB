@@ -9,10 +9,13 @@ import {
   JoinColumn,
   BeforeInsert,
   BeforeUpdate,
+  OneToMany,
 } from 'typeorm';
 import { School } from '../../schools/entities/school.entity';
 import { Faculty } from '../../faculties/entities/faculty.entity';
 import { Department } from '../../departments/entities/department.entity';
+import { Note } from 'src/notes/entities/note.entity';
+import { PastQuestion } from 'src/past-questions/entities/past-question.entity';
 
 export enum UserGender {
   MALE = 'male',
@@ -50,6 +53,15 @@ export class User {
 
   @Column({ type: 'varchar', length: 255 })
   password: string;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  passwordChangedAt: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  deactivatedAt: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  deletedAt: Date | null;
 
   @Column({ type: 'boolean', default: false })
   isEmailVerified: boolean;
@@ -123,6 +135,9 @@ export class User {
   @Column({ type: 'enum', enum: UserStatus, default: UserStatus.PENDING_VERIFICATION })
   status: UserStatus;
 
+  @Column({ type: 'varchar', length: 20, default: 'unverified' })
+  verificationStatus: string;
+
   @Column({ type: 'enum', enum: OnboardingStep, default: OnboardingStep.NONE })
   onboardingStep: OnboardingStep;
 
@@ -137,6 +152,12 @@ bubbleStyle: string;
 
   @Column({ type: 'boolean', default: false })
   "emailVerified": boolean;
+
+  @OneToMany(() => Note, (note) => note.user)
+  notes: Note[];
+
+  @OneToMany(() => PastQuestion, (pq) => pq.uploader)
+  pastQuestions: PastQuestion[];
 
   // === Timestamps ===
   @CreateDateColumn({ type: 'timestamptz' })

@@ -31,11 +31,13 @@ import { Gift } from '../gifts/entities/gift.entity';
 import { GiftTransaction } from '../gifts/entities/gift-transaction.entity';
 import { Follow } from '../follows/entities/follow.entity';
 import { UserBlock } from '../follows/entities/user-block.entity';
+import { UserSearchHistory } from '../users/entities/user-search-history.entity';
 import { Group } from '../groups/entities/group.entity';
 import { GroupMember } from '../groups/entities/group-member.entity';
 import { GroupMessage } from '../groups/entities/group-message.entity';
 import { MessageAttachment } from '../groups/entities/message-attachment.entity';
 import { MessageReaction } from '../groups/entities/message-reaction.entity';
+import { Note } from 'src/notes/entities/note.entity';
 
 config();
 
@@ -54,6 +56,7 @@ export default new DataSource({
     School,
     Faculty,
     Department,
+    Note,
     Post,
     PostMedia,
     PostTag,
@@ -79,6 +82,7 @@ export default new DataSource({
     GiftTransaction,
     Follow,
     UserBlock,
+    UserSearchHistory,
     Group,
     GroupMember,
     GroupMessage,
@@ -87,4 +91,5 @@ export default new DataSource({
   ],
   migrations: ['src/database/migrations/*{.ts,.js}'],
   synchronize: false,
+  
 });

@@ -11,6 +11,11 @@ export enum NotificationType {
   STORY_REPLY = 'story_reply',
   STORY_REACTION = 'story_reaction',
   GROUP_MESSAGE = 'group_message',
+  PAST_QUESTION_PURCHASED = 'past_question_purchased',
+  HOSTEL_LIKED = 'hostel_liked',
+  MARKETPLACE_LIKED = 'marketplace_liked',
+  EVENT_RSVP = 'event_rsvp',
+  NEW_FOLLOWER = 'new_follower',
 }
 
 export enum NotificationTargetType {
@@ -18,6 +23,11 @@ export enum NotificationTargetType {
   COMMENT = 'comment',
   STORY = 'story',
   GROUP = 'group',
+  PAST_QUESTION = 'past_question',
+  HOSTEL = 'hostel',
+  MARKETPLACE_ITEM = 'marketplace_item',
+  EVENT = 'event',
+  USER = 'user',
 }
 
 @Entity('notifications')

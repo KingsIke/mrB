@@ -13,12 +13,7 @@ import { CloudinaryService, CloudinaryResourceType } from '../cloudinary/cloudin
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationTargetType, NotificationType } from '../notifications/entities/notification.entity';
 import { resolveAttachmentType } from '../common/multer/message-attachment-upload.config';
-import {
-  CursorPaginated,
-  CursorPaginationDto,
-  decodeCursor,
-  encodeCursor,
-} from '../common/pagination/cursor-pagination.dto';
+import { CursorPaginated, CursorPaginationDto, decodeCursor, encodeCursor } from '../common/pagination/cursor-pagination.dto';
 import { GroupsService } from './groups.service';
 import { GroupsGateway, GroupWebSocketEvents } from './groups.gateway';
 

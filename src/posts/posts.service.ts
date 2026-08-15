@@ -78,17 +78,6 @@ export class PostsService {
     return [...new Set(matches)];
   }
 
-  private async getPostOrThrow(id: string): Promise<Post> {
-    const post = await this.postRepository.findOne({
-      where: { id },
-      relations: ["media", "tags"],
-    });
-    if (!post) {
-      throw new NotFoundException(`Post with ID "${id}" not found`);
-    }
-    return post;
-  }
-
   private async getCommentOrThrow(id: string): Promise<PostComment> {
     const comment = await this.commentRepository.findOne({ where: { id } });
     if (!comment) {
@@ -244,9 +233,72 @@ export class PostsService {
     });
   }
 
-  async findById(id: string): Promise<Post> {
-    return this.getPostOrThrow(id);
+async findById(id: string, currentUserId?: string): Promise<Post> {
+  return this.getPostOrThrow(id, currentUserId);
+}
+
+private async getPostOrThrow(id: string, currentUserId?: string): Promise<Post> {
+  const qb = this.postRepository
+    .createQueryBuilder("post")
+    .leftJoinAndSelect("post.media", "media")
+    .leftJoinAndSelect("post.tags", "tags")
+    .leftJoin("post.user", "user")
+    .leftJoin("user.department", "department")
+    .leftJoin("user.faculty", "faculty")
+    .leftJoin("user.school", "school")
+    .addSelect([
+      "user.id",
+      "user.firstName",
+      "user.lastName",
+      "user.username",
+      "user.profilePictureUrl",
+      "user.departmentId",
+      "user.facultyId",
+      "user.schoolId",
+      // Academic entity details
+      "department.id",
+      "department.name",
+      "faculty.id",
+      "faculty.name",
+      "school.id",
+      "school.name",
+    ])
+    .where("post.id = :id", { id });
+
+  const post = await qb.getOne();
+
+  if (!post) {
+    throw new NotFoundException(`Post with ID "${id}" not found`);
   }
+
+  // Populate contextual metadata if currentUserId is provided
+  if (currentUserId) {
+    const [like, isFollowingSet, userLevelStats] = await Promise.all([
+      this.postLikeRepository.findOne({
+        where: { userId: currentUserId, postId: post.id },
+        select: ["postId"],
+      }),
+      post.user
+        ? this.followsService.getFollowingIdsSet(currentUserId, [post.user.id])
+        : Promise.resolve(new Set<string>()),
+      post.user
+        ? this.gamificationService.getMe(post.user.id)
+        : Promise.resolve(null),
+    ]);
+
+    (post as any).isLiked = !!like;
+
+    if (post.user) {
+      (post.user as any).isFollowing = isFollowingSet.has(post.user.id);
+
+      if (userLevelStats) {
+        (post.user as any).appLevel = userLevelStats.level;
+      }
+    }
+  }
+
+  return post;
+}
 
   async getGiftTarget(
     postId: string,
@@ -1186,5 +1238,31 @@ async getFeed(
       reason,
     });
     return this.reportRepository.save(report);
+  }
+
+
+
+  async findUserProfileById(userId: string) {
+    const user = await this.usersService.findById(userId);
+    if (!user) return null;
+
+    let level = 1;
+    let appLevel = null;
+
+    try {
+      const stats = await this.gamificationService.getMe(userId);
+      if (stats?.level) {
+        level = stats.level.level ?? 1;
+        appLevel = stats.level;
+      }
+    } catch {
+      // Fallback defaults if gamification record doesn't exist yet
+    }
+
+    return {
+      ...user,
+      level,
+      appLevel,
+    };
   }
 }

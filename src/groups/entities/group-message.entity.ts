@@ -55,8 +55,6 @@ export class GroupMessage {
   @Column({ type: 'boolean', default: false })
   isEdited: boolean;
 
-
-
   @Column({ type: 'timestamptz', nullable: true })
   editedAt: Date | null;
 

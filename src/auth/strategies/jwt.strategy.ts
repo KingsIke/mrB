@@ -9,12 +9,15 @@ export interface JwtPayload {
   sub: string;
   email: string;
   username: string;
+   schoolId?:string
+  iat?: number;
 }
 
 export interface AuthenticatedUser {
   userId: string;
   email: string;
   username: string;
+  schoolId?:string
 }
 
 @Injectable()
@@ -35,10 +38,22 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!user || user.status === UserStatus.SUSPENDED) {
       throw new UnauthorizedException('User not found or suspended');
     }
+
+    // Reject deactivated or deleted accounts
+    if (user.deactivatedAt || user.deletedAt) {
+      throw new UnauthorizedException('Account is not active. Please log in again.');
+    }
+
+    // Reject tokens issued before the user's last password change
+    if (user.passwordChangedAt && payload.iat && payload.iat * 1000 < user.passwordChangedAt.getTime()) {
+      throw new UnauthorizedException('Session expired. Please log in again.');
+    }
+
     return {
       userId: payload.sub,
       email: payload.email,
       username: payload.username,
+      schoolId: payload.schoolId,
     };
   }
 }

@@ -6,6 +6,7 @@ import { GroupsService } from './groups.service';
 import { MessagesService } from './messages.service';
 import { GroupsController } from './groups.controller';
 import { MessagesController } from './messages.controller';
+import { DirectMessagesController } from './direct-messages.controller';
 import { GroupsGateway } from './groups.gateway';
 import { Group } from './entities/group.entity';
 import { GroupMember } from './entities/group-member.entity';
@@ -18,6 +19,7 @@ import { SchoolsModule } from '../schools/schools.module';
 import { FacultiesModule } from '../faculties/faculties.module';
 import { DepartmentsModule } from '../departments/departments.module';
 import { GamificationModule } from 'src/gamification/gamification.module';
+import { FollowsModule } from '../follows/follows.module';
 
 @Module({
   imports: [
@@ -27,6 +29,7 @@ import { GamificationModule } from 'src/gamification/gamification.module';
     SchoolsModule,
     FacultiesModule,
     DepartmentsModule,
+    FollowsModule,
     GamificationModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -39,7 +42,7 @@ import { GamificationModule } from 'src/gamification/gamification.module';
       }),
     }),
   ],
-  controllers: [GroupsController, MessagesController],
+  controllers: [GroupsController, MessagesController, DirectMessagesController],
   providers: [GroupsService, MessagesService, GroupsGateway],
   exports: [GroupsService, MessagesService, GroupsGateway],
 })

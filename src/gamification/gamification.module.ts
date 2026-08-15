@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { GamificationService } from './gamification.service';
 import { GamificationController } from './gamification.controller';
@@ -13,7 +13,7 @@ import { CoinsModule } from '../coins/coins.module';
   imports: [
     TypeOrmModule.forFeature([Level, UserXp, XpTransaction, GamificationConfig]),
     NotificationsModule,
-    CoinsModule,
+    forwardRef(() => CoinsModule),
   ],
   controllers: [GamificationController],
   providers: [GamificationService],

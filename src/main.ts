@@ -57,6 +57,7 @@ async function bootstrap() {
     .addTag('Follows', 'Following and blocking other users')
     .addTag('Groups', 'Group creation, membership, and settings')
     .addTag('Group Messages', 'Group chat messages, attachments, and reactions')
+    .addTag('Direct Messages', '1:1 conversations between users')
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 
@@ -54,4 +54,26 @@ export class PaystackClient {
       amount: data.data.amount,
     };
   }
+
+  // Inside your PaystackClient class
+async resolveAccountNumber(accountNumber: string, bankCode: string): Promise<{ account_name: string; account_number: string }> {
+  try {
+    const response = await this.http.get('/bank/resolve', {
+      params: {
+        account_number: accountNumber,
+        bank_code: bankCode,
+      },
+    });
+
+    if (!response.data?.status || !response.data?.data) {
+      throw new BadRequestException('Could not resolve account details');
+    }
+
+    return response.data.data; // Returns { account_name, account_number, bank_id }
+  } catch (error: any) {
+    throw new BadRequestException(
+      error.response?.data?.message || 'Failed to verify account holder name',
+    );
+  }
+}
 }

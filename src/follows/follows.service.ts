@@ -4,6 +4,11 @@ import { In, ILike, Repository, LessThan, LessThanOrEqual } from 'typeorm';
 import { Follow } from './entities/follow.entity';
 import { UserBlock } from './entities/user-block.entity';
 import { GamificationService } from '../gamification/gamification.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import {
+  NotificationTargetType,
+  NotificationType,
+} from '../notifications/entities/notification.entity';
 
 export interface FollowUserResponseDto {
   id: string;
@@ -29,6 +34,7 @@ export class FollowsService {
     @InjectRepository(UserBlock)
     private readonly blockRepository: Repository<UserBlock>,
     private readonly gamificationService: GamificationService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async follow(followerId: string, followingId: string): Promise<void> {
@@ -38,6 +44,15 @@ export class FollowsService {
     const existing = await this.followRepository.findOne({ where: { followerId, followingId } });
     if (existing) return;
     await this.followRepository.save(this.followRepository.create({ followerId, followingId }));
+
+    // Notify the followed user that they gained a new follower (skipped when following yourself)
+    await this.notificationsService.notify(
+      followingId,
+      followerId,
+      NotificationType.NEW_FOLLOWER,
+      NotificationTargetType.USER,
+      followerId,
+    );
   }
 
   async unfollow(followerId: string, followingId: string): Promise<void> {
@@ -257,9 +272,33 @@ export class FollowsService {
     await this.blockRepository.remove(existing);
   }
 
-  async getBlockedUsers(blockerId: string): Promise<UserBlock[]> {
-    return this.blockRepository.find({ where: { blockerId } });
-  }
+  async getBlockedUsers(blockerId: string): Promise<any[]> {
+  const blocks = await this.blockRepository
+    .createQueryBuilder('block')
+    .leftJoinAndSelect('block.blocked', 'blockedUser') // Join the blocked user entity
+    .where('block.blockerId = :blockerId', { blockerId })
+    .orderBy('block.createdAt', 'DESC')
+    .getMany();
+
+  // Return the mapped user details along with the block ID/timestamp if needed
+  return blocks.map((block) => {
+    const user = (block as any).blocked;
+    return {
+      blockId: block.id,
+      blockedAt: (block as any).createdAt,
+      user: user
+        ? {
+            id: user.id,
+            username: user.username,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            profilePictureUrl: user.profilePictureUrl,
+            bio: user.bio,
+          }
+        : null,
+    };
+  }).filter((item) => item.user !== null);
+}
 
   async isBlocked(userIdA: string, userIdB: string): Promise<boolean> {
     const count = await this.blockRepository
@@ -271,6 +310,14 @@ export class FollowsService {
       .getCount();
     return count > 0;
   }
+
+  /** Check if a specific block relation exists strictly from blockerId -> blockedId */
+async isBlocker(blockerId: string, blockedId: string): Promise<boolean> {
+  const existing = await this.blockRepository.findOne({ 
+    where: { blockerId, blockedId } 
+  });
+  return !!existing;
+}
 
   async getBlockedUserIds(userId: string): Promise<string[]> {
     const blocks = await this.blockRepository

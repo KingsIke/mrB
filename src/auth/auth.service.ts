@@ -28,6 +28,8 @@ import {
   VerifyResetOtpDto,
   ResetPasswordWithTokenDto,
 } from "../users/dto/onboarding.dto";
+import { ChangePasswordDto } from "../users/dto/change-password.dto";
+import { AccountActionDto } from "../users/dto/account-action.dto";
 import {
   User,
   UserStatus,
@@ -255,11 +257,23 @@ export class AuthService {
       throw new UnauthorizedException("Invalid email or password");
     }
 
+    if (user.deletedAt) {
+      throw new UnauthorizedException(
+        "This account has been deleted and can no longer be used.",
+      );
+    }
+
     if (!user.isEmailVerified) {
       await this.otpService.generateAndSendOtp(user);
       throw new UnauthorizedException(
         "Please verify your email before logging in. A new OTP has been sent to your email.",
       );
+    }
+
+    // Reactivate the account on successful login (deactivation is temporary)
+    if (user.deactivatedAt) {
+      await this.usersService.update(user.id, { deactivatedAt: null });
+      user.deactivatedAt = null;
     }
 
     const onboardingRequired = !user.isOnboardingComplete;
@@ -571,6 +585,7 @@ export class AuthService {
     const updatedUser = await this.usersService.update(user.id, {
       password: hashedPassword,
       isEmailVerified: true,
+      passwordChangedAt: new Date(),
     });
 
     const tokens = await this.generateTokens(updatedUser);
@@ -588,6 +603,208 @@ export class AuthService {
       },
       onboardingRequired,
       onboardingStep,
+    };
+  }
+
+  // ========== CHANGE PASSWORD (LOGGED IN) ==========
+  async changePassword(
+    userId: string,
+    changePasswordDto: ChangePasswordDto,
+  ): Promise<AuthResponse> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException("User not found");
+    }
+
+    const isCurrentPasswordValid = await bcrypt.compare(
+      changePasswordDto.currentPassword,
+      user.password,
+    );
+    if (!isCurrentPasswordValid) {
+      throw new BadRequestException("Current password is incorrect");
+    }
+
+    if (changePasswordDto.currentPassword === changePasswordDto.newPassword) {
+      throw new BadRequestException("New password must be different from the current password");
+    }
+
+    const hashedPassword = await bcrypt.hash(changePasswordDto.newPassword, 12);
+
+    const updatedUser = await this.usersService.update(user.id, {
+      password: hashedPassword,
+      passwordChangedAt: new Date(),
+    });
+
+    const tokens = await this.generateTokens(updatedUser);
+    const onboardingRequired = !updatedUser.isOnboardingComplete;
+    const onboardingStep = updatedUser.onboardingStep;
+
+    await this.gamificationService.recordDailyLogin(updatedUser.id);
+    const levelStats = await this.gamificationService.getMe(updatedUser.id);
+
+    const academicDetails = await this.getUserAcademicDetails(updatedUser);
+    const { password, ...userWithoutPassword } = updatedUser;
+
+    return {
+      ...tokens,
+      user: {
+        ...userWithoutPassword,
+        ...academicDetails,
+        appLevel: levelStats.level,
+        gamification: {
+          totalXp: levelStats.totalXp,
+          nextLevel: levelStats.nextLevel,
+          progress: levelStats.progress,
+          currentStreak: levelStats.currentStreak,
+        },
+      },
+      onboardingRequired,
+      onboardingStep,
+    };
+  }
+
+  // ========== DEACTIVATE ACCOUNT (TEMPORARY) ==========
+  async deactivateAccount(
+    userId: string,
+    accountActionDto: AccountActionDto,
+  ): Promise<{ message: string }> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException("User not found");
+    }
+
+    if (user.deletedAt) {
+      throw new BadRequestException(
+        "This account has been deleted and can no longer be used.",
+      );
+    }
+
+    const isCurrentPasswordValid = await bcrypt.compare(
+      accountActionDto.currentPassword,
+      user.password,
+    );
+    if (!isCurrentPasswordValid) {
+      throw new BadRequestException("Current password is incorrect");
+    }
+
+    await this.usersService.update(user.id, {
+      deactivatedAt: new Date(),
+      // Invalidate all existing sessions immediately
+      passwordChangedAt: new Date(),
+    });
+
+    return {
+      message:
+        "Your account has been deactivated. You can reactivate it anytime by logging back in.",
+    };
+  }
+
+  // ========== DELETE ACCOUNT (PERMANENT) ==========
+  async deleteAccount(
+    userId: string,
+    accountActionDto: AccountActionDto,
+  ): Promise<{ message: string }> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException("User not found");
+    }
+
+    if (user.deletedAt) {
+      throw new BadRequestException(
+        "This account has already been deleted.",
+      );
+    }
+
+    const isCurrentPasswordValid = await bcrypt.compare(
+      accountActionDto.currentPassword,
+      user.password,
+    );
+    if (!isCurrentPasswordValid) {
+      throw new BadRequestException("Current password is incorrect");
+    }
+
+    // Anonymize the account so it can no longer be used or identified, but
+    // keep the row so related content (posts, comments, etc.) stays intact.
+    const deletedSuffix = `${Date.now()}-${user.id.slice(0, 8)}`;
+    await this.usersService.update(user.id, {
+      email: `deleted-${deletedSuffix}@deleted.local`,
+      username: `deleted_${deletedSuffix}`,
+      phoneNumber: `deleted-${deletedSuffix}`,
+      firstName: "Deleted",
+      lastName: "User",
+      bio: "",
+      profilePictureUrl: "",
+      deletedAt: new Date(),
+      deactivatedAt: null,
+      // Invalidate all existing sessions immediately
+      passwordChangedAt: new Date(),
+    });
+
+    return {
+      message:
+        "Your account has been permanently deleted. We're sorry to see you go.",
+    };
+  }
+
+  // ========== STUDENT VERIFICATION (LOGGED IN) ==========
+  async submitStudentVerification(
+    userId: string,
+    files?: {
+      schoolIdCard?: Express.Multer.File;
+      administrationLetter?: Express.Multer.File;
+    },
+  ): Promise<{ message: string; user: Partial<User> }> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException("User not found");
+    }
+
+    if (user.verificationStatus === "verified") {
+      throw new BadRequestException("Your account is already verified");
+    }
+
+    if (!files?.schoolIdCard && !files?.administrationLetter) {
+      throw new BadRequestException(
+        "Please upload at least one document: your student ID card or admission letter.",
+      );
+    }
+
+    let schoolIdCardUrl = user.schoolIdCardUrl;
+    let administrationLetterUrl = user.administrationLetterUrl;
+
+    if (files?.schoolIdCard) {
+      const result = await this.cloudinaryService.uploadFile(
+        files.schoolIdCard,
+        {
+          folder: "school-social/school-id-cards",
+          resourceType: "image",
+        },
+      );
+      schoolIdCardUrl = result.secure_url;
+    }
+    if (files?.administrationLetter) {
+      const result = await this.cloudinaryService.uploadFile(
+        files.administrationLetter,
+        {
+          folder: "school-social/administration-letters",
+          resourceType: "image",
+        },
+      );
+      administrationLetterUrl = result.secure_url;
+    }
+
+    const updatedUser = await this.usersService.update(userId, {
+      schoolIdCardUrl,
+      administrationLetterUrl,
+      verificationStatus: "pending",
+    });
+
+    const { password, ...userWithoutPassword } = updatedUser;
+
+    return {
+      message:
+        "Your documents have been submitted. Verification usually takes less than 24 hours.",
+      user: userWithoutPassword,
     };
   }
 

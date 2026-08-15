@@ -13,12 +13,15 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Request } from 'express';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
+
 import { CoinsService } from './coins.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { PurchaseCoinsDto } from './dto/purchase-coins.dto';
+import { ConvertEarningsDto, PurchaseCoinsDto, ResolveAccountDto, WithdrawEarningsDto } from './dto/purchase-coins.dto';
 import { CursorPaginationDto } from '../common/pagination/cursor-pagination.dto';
+
+
 
 @ApiTags('Coins')
 @Controller('coins')
@@ -28,7 +31,7 @@ export class CoinsController {
   @Get('balance')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get my Campus Coins balance' })
+  @ApiOperation({ summary: 'Get my Campus Coins balance and earned gift cash balance' })
   async getBalance(@CurrentUser('userId') userId: string) {
     return this.coinsService.getBalance(userId);
   }
@@ -36,7 +39,7 @@ export class CoinsController {
   @Get('transactions')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'List my coin transaction history' })
+  @ApiOperation({ summary: 'List my transaction history' })
   async listTransactions(@CurrentUser('userId') userId: string, @Query() pagination: CursorPaginationDto) {
     return this.coinsService.listTransactions(userId, pagination);
   }
@@ -48,6 +51,42 @@ export class CoinsController {
   async purchase(@CurrentUser('userId') userId: string, @Body() dto: PurchaseCoinsDto) {
     return this.coinsService.purchase(userId, dto);
   }
+
+  @Post('convert')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Convert gift earnings (NGN) into spendable Campus Coins' })
+  async convertEarnedToCoins(
+    @CurrentUser('userId') userId: string,
+    @Body() dto: ConvertEarningsDto,
+  ) {
+    return this.coinsService.convertEarnedToCoins(userId, dto.amountNgn);
+  }
+
+  @Post('withdraw')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Withdraw gift earnings (NGN) to bank account' })
+  async withdrawEarnings(
+    @CurrentUser('userId') userId: string,
+    @Body() dto: WithdrawEarningsDto,
+  ) {
+    return this.coinsService.withdrawEarnings(userId, dto.amountNgn, {
+      bankCode: dto.bankCode,
+      accountNumber: dto.accountNumber,
+    });
+  }
+
+  @Post('resolve-account')
+@UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
+@HttpCode(HttpStatus.OK)
+@ApiOperation({ summary: 'Resolve bank account number to get account holder name' })
+async resolveAccountName(@Body() dto: ResolveAccountDto) {
+  return this.coinsService.resolveAccountName(dto);
+}
 
   // Intentionally unguarded — Paystack calls this with no user session, so JwtAuthGuard
   // doesn't apply here. Authenticity is instead verified via the HMAC signature below.
