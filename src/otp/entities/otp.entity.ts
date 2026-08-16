@@ -13,6 +13,8 @@ export enum OtpPurpose {
   EMAIL_VERIFICATION = 'email_verification',
   PASSWORD_RESET = 'password_reset',
   PHONE_VERIFICATION = 'phone_verification',
+  ACCOUNT_REACTIVATION = 'account_reactivation',
+  TWO_FACTOR_AUTH = 'two_factor_auth',
 }
 
 @Entity('otp_codes')

@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import { Group } from './entities/group.entity';
 import { GroupMember } from './entities/group-member.entity';
 import { GroupMessage } from './entities/group-message.entity';
@@ -39,10 +39,11 @@ export class MessagesService {
 private async getMessageOrThrow(messageId: string, currentUserId?: string): Promise<GroupMessage> {
   const message = await this.messageRepository.findOne({
     where: { id: messageId },
-    relations: { 
-      attachments: true, 
-      user: true, 
-      reactions: true 
+    relations: {
+      attachments: true,
+      user: true,
+      reactions: true,
+      replyTo: { user: true, attachments: true },
     },
   });
 
@@ -132,6 +133,8 @@ private async getMessageOrThrow(messageId: string, currentUserId?: string): Prom
       attachment.filename = file.originalname;
       attachment.mimeType = file.mimetype;
       attachment.size = file.size;
+      // Audio attachments (voice notes) carry a duration supplied by the client
+      attachment.durationMillis = type === AttachmentType.AUDIO ? dto.durationMillis ?? null : null;
       attachment.order = index;
       attachments.push(attachment);
     }
@@ -201,6 +204,16 @@ private async getMessageOrThrow(messageId: string, currentUserId?: string): Prom
     message.content = null;
     message.deletedAt = new Date();
     await this.messageRepository.save(message);
+
+    // Strip references to the deleted message from any replies quoting it,
+    // so reply bubbles don't keep pointing at a removed message.
+    await this.messageRepository
+      .createQueryBuilder()
+      .update(GroupMessage)
+      .set({ replyToId: null })
+      .where('replyToId = :messageId', { messageId })
+      .execute();
+
     this.groupsGateway.broadcastToGroup(message.groupId, GroupWebSocketEvents.MESSAGE_DELETED, { messageId });
   }
 
@@ -250,7 +263,11 @@ private async getMessageOrThrow(messageId: string, currentUserId?: string): Prom
       .createQueryBuilder('message')
       .leftJoinAndSelect('message.user', 'user')
       .leftJoinAndSelect('message.attachments', 'attachments')
-      .where('message.groupId = :groupId', { groupId });
+      .leftJoinAndSelect('message.replyTo', 'replyTo')
+      .leftJoinAndSelect('replyTo.user', 'replyToUser')
+      .leftJoinAndSelect('replyTo.attachments', 'replyToAttachments')
+      .where('message.groupId = :groupId', { groupId })
+      .andWhere('message.isDeleted = :isDeleted', { isDeleted: false });
 
     if (pagination.cursor) {
       const { createdAt, id } = decodeCursor(pagination.cursor);
@@ -266,6 +283,31 @@ private async getMessageOrThrow(messageId: string, currentUserId?: string): Prom
     const hasMore = messages.length > limit;
     const items = hasMore ? messages.slice(0, limit) : messages;
     const last = items[items.length - 1];
+
+    // Read receipts (1:1 conversations): compute whether the other participant
+    // has read each message, based on their lastReadAt.
+    let otherLastReadAt: Date | null = null;
+    let readReceiptsEnabled = true;
+    const otherMembership = await this.groupMemberRepository.findOne({
+      where: { groupId, userId: Not(userId) },
+      relations: { user: true },
+    });
+    if (otherMembership) {
+      otherLastReadAt = otherMembership.lastReadAt ?? null;
+      readReceiptsEnabled = otherMembership.user?.readReceipts ?? true;
+    }
+
+    if (items.length > 0 && otherMembership) {
+      items.forEach((item) => {
+        if (item.userId !== userId) return;
+        const readByOther =
+          readReceiptsEnabled &&
+          Boolean(otherLastReadAt) &&
+          new Date(item.createdAt).getTime() <= otherLastReadAt!.getTime();
+        (item as any).readByOther = readByOther;
+        (item as any).readReceiptsEnabled = readReceiptsEnabled;
+      });
+    }
 
     if (items.length > 0) {
       const messageIds = items.map((m) => m.id);

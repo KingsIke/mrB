@@ -62,15 +62,15 @@ export class StoriesController {
   @Post(':id/react')
   @ApiOperation({ summary: 'React to a story with an emoji' })
   async react(@CurrentUser('userId') userId: string, @Param('id') id: string, @Body() dto: ReactStoryDto) {
-    await this.storiesService.react(userId, id, dto.emoji);
-    return { reacted: true };
+    const result = await this.storiesService.react(userId, id, dto.emoji);
+    return { reacted: true, ...result };
   }
 
   @Delete(':id/react')
   @ApiOperation({ summary: 'Remove my reaction from a story' })
   async unreact(@CurrentUser('userId') userId: string, @Param('id') id: string) {
-    await this.storiesService.unreact(userId, id);
-    return { reacted: false };
+    const result = await this.storiesService.unreact(userId, id);
+    return { reacted: false, ...result };
   }
 
   @Post(':id/reply')

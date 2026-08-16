@@ -14,12 +14,14 @@ import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { GroupMember } from './entities/group-member.entity';
+import { User } from '../users/entities/user.entity';
 import { verifySocketToken } from '../auth/guards/ws-jwt.guard';
 
 export enum GroupWebSocketEvents {
   MESSAGE_NEW = 'message:new',
   MESSAGE_EDITED = 'message:edited',
   MESSAGE_DELETED = 'message:deleted',
+  MESSAGE_READ = 'message:read',
   REACTION_ADDED = 'reaction:added',
   REACTION_REMOVED = 'reaction:removed',
   MEMBER_ADDED = 'member:added',
@@ -52,9 +54,34 @@ export class GroupsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     @InjectRepository(GroupMember)
     private readonly groupMemberRepository: Repository<GroupMember>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
+
+  // userId -> onlineStatus preference (true = visible to others)
+  private readonly onlineVisibleCache = new Map<string, boolean>();
+
+  private async isOnlineVisible(userId: string): Promise<boolean> {
+    const cached = this.onlineVisibleCache.get(userId);
+    if (cached !== undefined) return cached;
+    try {
+      const user = await this.userRepository.findOne({
+        where: { id: userId },
+        select: { onlineStatus: true },
+      });
+      const visible = user?.onlineStatus ?? true;
+      this.onlineVisibleCache.set(userId, visible);
+      return visible;
+    } catch {
+      return true;
+    }
+  }
+
+  private clearOnlineVisibleCache(userId: string) {
+    this.onlineVisibleCache.delete(userId);
+  }
 
   async handleConnection(client: Socket) {
     const payload = await verifySocketToken(client, this.jwtService, this.configService);
@@ -115,12 +142,21 @@ export class GroupsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const usersSet = this.roomOnlineUsers.get(data.groupId)!;
     usersSet.add(userId);
 
-    client.emit(GroupWebSocketEvents.ONLINE_LIST, Array.from(usersSet));
+    // Respect the user's online-status privacy setting: hide them from the
+    // presence list (and from join notifications) when they've turned it off.
+    const visible = await this.isOnlineVisible(userId);
+    const visibleUsers = visible
+      ? Array.from(usersSet)
+      : Array.from(usersSet).filter((id) => id !== userId);
 
-    client.to(roomName).emit(GroupWebSocketEvents.USER_JOINED, {
-      userId,
-      groupId: data.groupId,
-    });
+    client.emit(GroupWebSocketEvents.ONLINE_LIST, visibleUsers);
+
+    if (visible) {
+      client.to(roomName).emit(GroupWebSocketEvents.USER_JOINED, {
+        userId,
+        groupId: data.groupId,
+      });
+    }
 
     return { event: 'joinedGroup', data: data.groupId };
   }
@@ -195,6 +231,8 @@ export class GroupsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.roomOnlineUsers.delete(groupId);
       }
     }
+
+    this.clearOnlineVisibleCache(userId);
 
     client.to(roomName).emit(GroupWebSocketEvents.USER_LEFT, {
       userId,

@@ -17,7 +17,9 @@ import { FacultiesService } from "../faculties/faculties.service";
 import { DepartmentsService } from "../departments/departments.service";
 import { CreateUserDto } from "../users/dto/create-user.dto";
 import { LoginDto } from "../users/dto/login.dto";
+import { ReactivateAccountDto } from "../users/dto/reactivate-account.dto";
 import { VerifyOtpDto } from "../users/dto/verify-otp.dto";
+import { Verify2faDto } from "../users/dto/verify-2fa.dto";
 import { ResendOtpDto } from "../users/dto/resend-otp.dto";
 import {
   OnboardingStep1Dto,
@@ -77,6 +79,24 @@ export interface AuthResponse {
   };
   onboardingRequired: boolean;
   onboardingStep: string;
+}
+
+export interface TwoFactorRequiredInfo {
+  twoFactorRequired: true;
+  email: string;
+  userId: string;
+}
+
+export interface DeactivatedAccountInfo {
+  accountDeactivated: true;
+  user: {
+    id: string;
+    email: string;
+    username?: string;
+    firstName: string;
+    lastName: string;
+    profilePictureUrl?: string | null;
+  };
 }
 
 @Injectable()
@@ -243,7 +263,9 @@ export class AuthService {
   }
 
   // ========== LOGIN ==========
-  async login(loginDto: LoginDto): Promise<AuthResponse> {
+  async login(
+    loginDto: LoginDto,
+  ): Promise<AuthResponse | DeactivatedAccountInfo | TwoFactorRequiredInfo> {
     const user = await this.usersService.findByEmail(loginDto.email);
     if (!user) {
       throw new UnauthorizedException("Invalid email or password");
@@ -270,12 +292,152 @@ export class AuthService {
       );
     }
 
-    // Reactivate the account on successful login (deactivation is temporary)
+    // Account is deactivated (temporary) — don't log in silently. Return a
+    // signal so the client can show an "Activate Account" flow instead.
     if (user.deactivatedAt) {
-      await this.usersService.update(user.id, { deactivatedAt: null });
-      user.deactivatedAt = null;
+      return {
+        accountDeactivated: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          profilePictureUrl: user.profilePictureUrl,
+        },
+      } as DeactivatedAccountInfo;
     }
 
+    // Two-factor authentication is enabled — require the emailed code
+    // before issuing tokens.
+    if (user.twoFactorEnabled) {
+      await this.otpService.generateAndSendOtp(user, OtpPurpose.TWO_FACTOR_AUTH);
+      return {
+        twoFactorRequired: true,
+        email: user.email,
+        userId: user.id,
+      };
+    }
+
+    return this.buildAuthResponse(user);
+  }
+
+  /**
+   * Complete a 2FA-protected login by verifying the emailed code, then
+   * issue the normal auth response (tokens + user).
+   */
+  async verify2faLogin(verify2faDto: Verify2faDto): Promise<AuthResponse> {
+    const user = await this.usersService.findByEmail(verify2faDto.email);
+    if (!user) {
+      throw new UnauthorizedException('Invalid email or code');
+    }
+    if (!user.twoFactorEnabled) {
+      throw new BadRequestException('Two-factor authentication is not enabled for this account');
+    }
+
+    const isValid = await this.otpService.verifyOtp(
+      user.id,
+      verify2faDto.code,
+      OtpPurpose.TWO_FACTOR_AUTH,
+    );
+    if (!isValid) {
+      throw new UnauthorizedException('Invalid or expired verification code');
+    }
+
+    if (user.isOnboardingComplete && user.status !== UserStatus.ACTIVE) {
+      await this.usersService.update(user.id, { status: UserStatus.ACTIVE });
+    }
+
+    return this.buildAuthResponse(user);
+  }
+
+  /**
+   * Resend the 2FA login code to the user's email (used on the login screen).
+   */
+  async resend2faLoginOtp(email: string): Promise<{ message: string }> {
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (!user.twoFactorEnabled) {
+      throw new BadRequestException('Two-factor authentication is not enabled for this account');
+    }
+    await this.otpService.generateAndSendOtp(user, OtpPurpose.TWO_FACTOR_AUTH);
+    return { message: 'A new verification code has been sent to your email.' };
+  }
+
+  /**
+   * Enable two-factor authentication: send the setup code to the user's email.
+   */
+  async send2faSetupOtp(userId: string): Promise<{ message: string }> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (user.twoFactorEnabled) {
+      throw new BadRequestException('Two-factor authentication is already enabled');
+    }
+    await this.otpService.generateAndSendOtp(user, OtpPurpose.TWO_FACTOR_AUTH);
+    return { message: 'A verification code has been sent to your email.' };
+  }
+
+  /**
+   * Confirm setup by verifying the emailed code, then flip 2FA on.
+   */
+  async enable2fa(userId: string, code: string): Promise<{ message: string }> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    const isValid = await this.otpService.verifyOtp(
+      user.id,
+      code,
+      OtpPurpose.TWO_FACTOR_AUTH,
+    );
+    if (!isValid) {
+      throw new UnauthorizedException('Invalid or expired verification code');
+    }
+    user.twoFactorEnabled = true;
+    await this.usersService.update(user.id, { twoFactorEnabled: true });
+    return { message: 'Two-factor authentication enabled successfully.' };
+  }
+
+  /**
+   * Disable two-factor authentication (verified via a fresh emailed code).
+   */
+  async send2faDisableOtp(userId: string): Promise<{ message: string }> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (!user.twoFactorEnabled) {
+      throw new BadRequestException('Two-factor authentication is not enabled');
+    }
+    await this.otpService.generateAndSendOtp(user, OtpPurpose.TWO_FACTOR_AUTH);
+    return { message: 'A verification code has been sent to your email.' };
+  }
+
+  async disable2fa(userId: string, code: string): Promise<{ message: string }> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    const isValid = await this.otpService.verifyOtp(
+      user.id,
+      code,
+      OtpPurpose.TWO_FACTOR_AUTH,
+    );
+    if (!isValid) {
+      throw new UnauthorizedException('Invalid or expired verification code');
+    }
+    await this.usersService.update(user.id, { twoFactorEnabled: false });
+    return { message: 'Two-factor authentication disabled.' };
+  }
+
+  /**
+   * Shared response builder: tokens + user + onboarding flags.
+   */
+  private async buildAuthResponse(user: User): Promise<AuthResponse> {
     const onboardingRequired = !user.isOnboardingComplete;
     const onboardingStep = user.onboardingStep;
 
@@ -298,13 +460,13 @@ export class AuthService {
       user: {
         ...userWithoutPassword,
         ...academicDetails,
-        appLevel: levelStats.level, 
+        appLevel: levelStats.level,
         gamification: {
           totalXp: levelStats.totalXp,
           nextLevel: levelStats.nextLevel,
           progress: levelStats.progress,
           currentStreak: levelStats.currentStreak,
-        }
+        },
       },
       onboardingRequired,
       onboardingStep,
@@ -657,6 +819,113 @@ export class AuthService {
           progress: levelStats.progress,
           currentStreak: levelStats.currentStreak,
         },
+      },
+      onboardingRequired,
+      onboardingStep,
+    };
+  }
+
+  // ========== REACTIVATE ACCOUNT (OTP-GATED) ==========
+  async sendReactivationOtp(
+    resendOtpDto: ResendOtpDto,
+  ): Promise<{ message: string; email: string }> {
+    const user = await this.usersService.findByEmail(resendOtpDto.email);
+    if (!user) {
+      throw new NotFoundException("No account found with this email address");
+    }
+
+    if (user.deletedAt) {
+      throw new BadRequestException(
+        "This account has been deleted and can no longer be used.",
+      );
+    }
+
+    if (!user.deactivatedAt) {
+      throw new BadRequestException(
+        "This account is not deactivated. You can log in normally.",
+      );
+    }
+
+    await this.otpService.generateAndSendOtp(user, OtpPurpose.ACCOUNT_REACTIVATION);
+
+    return {
+      message: "A reactivation code has been sent to your email.",
+      email: user.email,
+    };
+  }
+
+  async reactivateAccount(dto: ReactivateAccountDto): Promise<AuthResponse> {
+    const user = await this.usersService.findByEmail(dto.email);
+    if (!user) {
+      throw new UnauthorizedException("Invalid email or password");
+    }
+
+    const isPasswordValid = await bcrypt.compare(
+      dto.password,
+      user.password,
+    );
+    if (!isPasswordValid) {
+      throw new UnauthorizedException("Invalid email or password");
+    }
+
+    if (user.deletedAt) {
+      throw new UnauthorizedException(
+        "This account has been deleted and can no longer be used.",
+      );
+    }
+
+    if (!user.deactivatedAt) {
+      throw new BadRequestException(
+        "This account is not deactivated. You can log in normally.",
+      );
+    }
+
+    // Require the OTP sent to the user's email before reactivating
+    const isValidOtp = await this.otpService.verifyOtp(
+      user.id,
+      dto.code,
+      OtpPurpose.ACCOUNT_REACTIVATION,
+    );
+    if (!isValidOtp) {
+      throw new BadRequestException("Invalid or expired OTP code");
+    }
+
+    // Bring the account back
+    await this.usersService.update(user.id, { deactivatedAt: null });
+    user.deactivatedAt = null;
+
+    // Notify the user that their account is active again. Email failures
+    // must never block the reactivation itself.
+    try {
+      await this.otpService.sendReactivationEmail(user);
+    } catch (error) {
+      this.logger.error('Failed to send reactivation email', error);
+    }
+
+    const onboardingRequired = !user.isOnboardingComplete;
+    const onboardingStep = user.onboardingStep;
+
+    const tokens = await this.generateTokens(user);
+
+    if (user.status !== UserStatus.ACTIVE) {
+      await this.usersService.update(user.id, { status: UserStatus.ACTIVE });
+    }
+
+    await this.gamificationService.recordDailyLogin(user.id);
+    const levelStats = await this.gamificationService.getMe(user.id);
+
+    // Fetch school, faculty, and department names
+    const academicDetails = await this.getUserAcademicDetails(user);
+
+    const { password, ...userWithoutPassword } = user;
+
+    return {
+      ...tokens,
+      user: {
+        ...userWithoutPassword,
+        ...academicDetails,
+        appLevel: levelStats?.level ?? null,
+        gamification: levelStats,
       },
       onboardingRequired,
       onboardingStep,

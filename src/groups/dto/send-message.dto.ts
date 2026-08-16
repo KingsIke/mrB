@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsInt, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
 
 export class SendMessageDto {
   @ApiPropertyOptional({ maxLength: 4000, description: 'Text content; optional if attachments are provided' })
@@ -12,4 +12,10 @@ export class SendMessageDto {
   @IsOptional()
   @IsUUID('4')
   replyToId?: string;
+
+  @ApiPropertyOptional({ description: 'Duration of an audio attachment in milliseconds (voice notes)' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  durationMillis?: number;
 }

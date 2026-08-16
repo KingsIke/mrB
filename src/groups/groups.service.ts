@@ -10,6 +10,7 @@ import { In, Not, Repository } from 'typeorm';
 import { Group, GroupType } from './entities/group.entity';
 import { GroupMember, GroupMemberRole } from './entities/group-member.entity';
 import { GroupMessage } from './entities/group-message.entity';
+import { AttachmentType } from './entities/message-attachment.entity';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { UpdateGroupDto } from './dto/update-group.dto';
 import { LockGroupDto } from './dto/lock-group.dto';
@@ -162,14 +163,6 @@ export class GroupsService {
     return group;
   }
 
-  // private async getMembershipOrThrow(groupId: string, userId: string): Promise<GroupMember> {
-  //   const membership = await this.groupMemberRepository.findOne({ where: { groupId, userId } });
-  //   if (!membership) {
-  //     throw new ForbiddenException('You are not a member of this group');
-  //   }
-  //   return membership;
-  // }
-
   private async getMembershipOrThrow(groupId: string, userId: string): Promise<GroupMember> {
   let membership = await this.groupMemberRepository.findOne({ where: { groupId, userId } });
 
@@ -303,6 +296,45 @@ export class GroupsService {
       }
     }
   }
+
+  // --- Manual Join Method ---
+
+async joinGroup(userId: string, groupId: string): Promise<GroupMember> {
+  const group = await this.getGroupOrThrow(groupId);
+
+  // Prevent manual joining if it's a 1:1 Direct Message
+  if (group.type === GroupType.DIRECT) {
+    throw new ForbiddenException('Cannot manually join a direct conversation');
+  }
+
+  // Check if already a member
+  const existingMembership = await this.groupMemberRepository.findOne({
+    where: { groupId: group.id, userId },
+  });
+
+  if (existingMembership) {
+    return existingMembership;
+  }
+
+  // Handle joining default/system interest groups or public groups
+  const member = await this.groupMemberRepository.save(
+    this.groupMemberRepository.create({
+      groupId: group.id,
+      userId,
+      role: GroupMemberRole.MEMBER,
+    }),
+  );
+
+  await this.groupRepository.increment({ id: group.id }, 'membersCount', 1);
+
+  this.groupsGateway.broadcastToGroup(
+    groupId,
+    GroupWebSocketEvents.MEMBER_ADDED,
+    member,
+  );
+
+  return member;
+}
 
   
 async getDefaultGroups(): Promise<Group[]> {
@@ -513,6 +545,20 @@ async getDefaultGroups(): Promise<Group[]> {
     const membership = await this.getMembershipOrThrow(groupId, userId);
     membership.lastReadAt = new Date();
     await this.groupMemberRepository.save(membership);
+
+    // Notify the other participant in a 1:1 chat that their messages were read,
+    // so the sender can flip their ticks in real time.
+    const other = await this.groupMemberRepository.findOne({
+      where: { groupId, userId: Not(userId) },
+      relations: { user: true },
+    });
+    if (other && other.user && other.user.readReceipts !== false) {
+      this.groupsGateway.sendToUser(other.userId, GroupWebSocketEvents.MESSAGE_READ, {
+        groupId,
+        userId,
+        lastReadAt: membership.lastReadAt,
+      });
+    }
   }
 
   async getGroupDetail(userId: string, groupId: string): Promise<Group> {
@@ -677,6 +723,14 @@ async getDefaultGroups(): Promise<Group[]> {
         unreadCount: number;
         lastReadAt: Date | null;
         lastMessageContent: string | null;
+        lastMessagePreview: {
+          content: string | null;
+          isAudio: boolean;
+          mimeType: string | null;
+          durationMillis: number | null;
+          readByOther: boolean;
+          readReceiptsEnabled: boolean;
+        };
       }
     >
   > {
@@ -715,9 +769,9 @@ async getDefaultGroups(): Promise<Group[]> {
           : null;
 
         const latestMessage = await this.groupMessageRepository.findOne({
-          where: { groupId: group.id },
+          where: { groupId: group.id, isDeleted: false },
           order: { createdAt: 'DESC' },
-          select: ['content'],
+          relations: { attachments: true },
         });
 
         const unreadQb = this.groupMessageRepository
@@ -733,11 +787,36 @@ async getDefaultGroups(): Promise<Group[]> {
 
         const unreadCount = await unreadQb.getCount();
 
+        // Last-message summary: text content, or voice-note info for audio attachments
+        const lastAudio = latestMessage?.attachments?.find(
+          (a) => a.type === AttachmentType.AUDIO,
+        );
+        // Read state for the list tick: did the other participant read my last message?
+        let readByOther = false;
+        let readReceiptsEnabled = true;
+        if (latestMessage && latestMessage.userId === userId && other) {
+          readReceiptsEnabled = other.user?.readReceipts ?? true;
+          if (readReceiptsEnabled && other.lastReadAt) {
+            readByOther =
+              new Date(latestMessage.createdAt).getTime() <= other.lastReadAt.getTime();
+          }
+        }
+
+        const lastMessagePreview = {
+          content: latestMessage?.content ?? null,
+          isAudio: Boolean(lastAudio),
+          mimeType: lastAudio?.mimeType ?? null,
+          durationMillis: lastAudio?.durationMillis ?? null,
+          readByOther,
+          readReceiptsEnabled,
+        };
+
         return Object.assign(group, {
           participant,
           unreadCount,
           lastReadAt: m.lastReadAt,
           lastMessageContent: latestMessage?.content ?? null,
+          lastMessagePreview,
         });
       })
     );

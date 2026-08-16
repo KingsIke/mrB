@@ -10,6 +10,7 @@ import { DirectMessagesController } from './direct-messages.controller';
 import { GroupsGateway } from './groups.gateway';
 import { Group } from './entities/group.entity';
 import { GroupMember } from './entities/group-member.entity';
+import { User } from '../users/entities/user.entity';
 import { GroupMessage } from './entities/group-message.entity';
 import { MessageAttachment } from './entities/message-attachment.entity';
 import { MessageReaction } from './entities/message-reaction.entity';
@@ -23,7 +24,7 @@ import { FollowsModule } from '../follows/follows.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Group, GroupMember, GroupMessage, MessageAttachment, MessageReaction]),
+    TypeOrmModule.forFeature([Group, GroupMember, GroupMessage, MessageAttachment, MessageReaction, User]),
     UsersModule,
     NotificationsModule,
     SchoolsModule,

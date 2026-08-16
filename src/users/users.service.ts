@@ -9,6 +9,7 @@ import { User } from './entities/user.entity';
 import { UserSearchHistory } from './entities/user-search-history.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { UpdatePrivacyDto } from './dto/update-privacy.dto';
 import { Follow } from 'src/follows/entities/follow.entity';
 
 import { Post } from 'src/posts/entities/post.entity';
@@ -52,6 +53,14 @@ export class UsersService {
       where: { id },
       relations: ['school', 'faculty', 'department'],
     });
+  }
+
+  async isFollowing(followerId: string, targetUserId: string): Promise<boolean> {
+    if (!followerId || !targetUserId || followerId === targetUserId) return true;
+    const record = await this.followRepository.findOne({
+      where: { followerId, followingId: targetUserId },
+    });
+    return Boolean(record);
   }
 
   async findByEmail(email: string): Promise<User | null> {
@@ -114,6 +123,22 @@ export class UsersService {
       giftsCount,
       likesCount: likesCountResult,
     };
+  }
+
+  async updatePrivacy(userId: string, dto: UpdatePrivacyDto): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException(`User with ID "${userId}" not found`);
+    }
+
+    // Only touch the fields the client explicitly sent
+    if (dto.privateProfile !== undefined) user.privateProfile = dto.privateProfile;
+    if (dto.onlineStatus !== undefined) user.onlineStatus = dto.onlineStatus;
+    if (dto.readReceipts !== undefined) user.readReceipts = dto.readReceipts;
+    if (dto.activityStatus !== undefined) user.activityStatus = dto.activityStatus;
+    if (dto.dataSharing !== undefined) user.dataSharing = dto.dataSharing;
+
+    return this.userRepository.save(user);
   }
 
   async update(id: string, data: Partial<User>): Promise<User> {

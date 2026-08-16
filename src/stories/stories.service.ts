@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, LessThan, MoreThan, Repository } from 'typeorm';
+import { In, IsNull, LessThan, MoreThan, Repository } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Story, StoryMediaType } from './entities/story.entity';
 import { StoryView } from './entities/story-view.entity';
@@ -118,6 +118,19 @@ async getFeed(userId: string): Promise<any[]> {
 
     const stories = await qb.getMany();
 
+    // 0. Load the current user's own reactions for these stories so the
+    //    client can render filled hearts and toggle like/unlike correctly.
+    const storyIds = stories.map((s) => s.id);
+    const myReactions: StoryReaction[] =
+      storyIds.length > 0
+        ? await this.storyReactionRepository.find({
+            where: { storyId: In(storyIds), userId },
+          })
+        : [];
+    const myReactionByStory = new Map<string, string>(
+      myReactions.map((r) => [r.storyId, r.emoji]),
+    );
+
     // 1. Extract unique user IDs from the active feed
     const userIds = [...new Set(stories.map((s) => s.userId))];
 
@@ -145,6 +158,7 @@ async getFeed(userId: string): Promise<any[]> {
       if (story.user) {
         return {
           ...story,
+          myReaction: myReactionByStory.get(story.id) ?? null,
           user: {
             ...story.user,
             level: levelLookup[story.userId] ?? 1,
@@ -153,6 +167,7 @@ async getFeed(userId: string): Promise<any[]> {
       }
       return {
         ...story,
+        myReaction: null,
         user: null,
       };
     });
@@ -192,17 +207,27 @@ async getFeed(userId: string): Promise<any[]> {
     await this.storyRepository.remove(story);
   }
 
-  async react(userId: string, id: string, emoji: string): Promise<void> {
+  async react(
+    userId: string,
+    id: string,
+    emoji: string,
+  ): Promise<{ created: boolean; reactionsCount: number }> {
     const story = await this.getActiveStoryOrThrow(id);
-    const existing = await this.storyReactionRepository.findOne({ where: { storyId: id, userId } });
+    const existing = await this.storyReactionRepository.findOne({
+      where: { storyId: id, userId },
+    });
 
+    // The current user already reacted -> just update their emoji in place
+    // (no double-counting, no duplicate reaction rows).
     if (existing) {
       existing.emoji = emoji;
       await this.storyReactionRepository.save(existing);
-      return;
+      return { created: false, reactionsCount: story.reactionsCount };
     }
 
-    await this.storyReactionRepository.save(this.storyReactionRepository.create({ storyId: id, userId, emoji }));
+    await this.storyReactionRepository.save(
+      this.storyReactionRepository.create({ storyId: id, userId, emoji }),
+    );
     await this.storyRepository.increment({ id }, 'reactionsCount', 1);
     await this.notificationsService.notify(
       story.userId,
@@ -211,13 +236,29 @@ async getFeed(userId: string): Promise<any[]> {
       NotificationTargetType.STORY,
       id,
     );
+    return { created: true, reactionsCount: story.reactionsCount + 1 };
   }
 
-  async unreact(userId: string, id: string): Promise<void> {
-    const existing = await this.storyReactionRepository.findOne({ where: { storyId: id, userId } });
-    if (!existing) return;
+  async unreact(
+    userId: string,
+    id: string,
+  ): Promise<{ removed: boolean; reactionsCount: number }> {
+    const existing = await this.storyReactionRepository.findOne({
+      where: { storyId: id, userId },
+    });
+    if (!existing) {
+      // Nothing to remove — tell the client the current authoritative count
+      // so it can correct itself instead of blindly decrementing.
+      const story = await this.storyRepository.findOne({ where: { id } });
+      return { removed: false, reactionsCount: story?.reactionsCount ?? 0 };
+    }
     await this.storyReactionRepository.remove(existing);
     await this.storyRepository.decrement({ id }, 'reactionsCount', 1);
+    const story = await this.storyRepository.findOne({ where: { id } });
+    return {
+      removed: true,
+      reactionsCount: Math.max(0, story?.reactionsCount ?? 0),
+    };
   }
 
   async reply(userId: string, id: string, text: string): Promise<StoryReply> {

@@ -35,33 +35,33 @@ import { PaginationDto } from './dto/pagination.dto';
 export class EventsController {
   constructor(private readonly eventsService: EventsService) {}
 
-  @Get()
+@Get()
   @ApiOperation({ summary: 'Get all events for the current user school (Paginated)' })
   @ApiQuery({ name: 'category', enum: EventCategory, required: false })
   async findAll(
-    @CurrentUser('schoolId') schoolId: string,
+    @CurrentUser('userId') userId: string,
     @Query() paginationDto: PaginationDto,
     @Query('category') category?: EventCategory,
   ) {
-    return this.eventsService.findAll(schoolId, paginationDto, category);
+    return this.eventsService.findAll(userId, paginationDto, category);
   }
 
   @Get('upcoming')
   @ApiOperation({ summary: 'Get upcoming events for the current user school (Paginated)' })
   async findUpcoming(
-    @CurrentUser('schoolId') schoolId: string,
+    @CurrentUser('userId') userId: string,
     @Query() paginationDto: PaginationDto,
   ) {
-    return this.eventsService.findUpcoming(schoolId, paginationDto);
+    return this.eventsService.findUpcoming(userId, paginationDto);
   }
 
   @Get('past')
   @ApiOperation({ summary: 'Get past events for the current user school (Paginated)' })
   async findPast(
-    @CurrentUser('schoolId') schoolId: string,
+    @CurrentUser('userId') userId: string,
     @Query() paginationDto: PaginationDto,
   ) {
-    return this.eventsService.findPast(schoolId, paginationDto);
+    return this.eventsService.findPast(userId, paginationDto);
   }
 
   @Get(':id')

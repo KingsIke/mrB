@@ -217,6 +217,8 @@ async getGiverLeaderboard(
       .leftJoinAndSelect('userXp.user', 'user')
       .orderBy('userXp.giftsGiven', 'DESC')
       .addOrderBy('userXp.totalXp', 'DESC')
+      // Users with activity status off opt out of the public leaderboard
+      .andWhere('user.activityStatus = :activityStatus', { activityStatus: true })
       .take(limit);
 
     switch (scope) {

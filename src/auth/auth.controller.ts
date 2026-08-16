@@ -13,7 +13,12 @@ import {
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBearerAuth } from '@nestjs/swagger';
-import { AuthService, AuthResponse } from './auth.service';
+import {
+  AuthService,
+  AuthResponse,
+  DeactivatedAccountInfo,
+  TwoFactorRequiredInfo,
+} from './auth.service';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { LoginDto } from '../users/dto/login.dto';
 import { VerifyOtpDto } from '../users/dto/verify-otp.dto';
@@ -21,6 +26,8 @@ import { ResendOtpDto } from '../users/dto/resend-otp.dto';
 import { CompleteOnboardingDto, ForgotPasswordDto, ResetPasswordWithTokenDto, VerifyResetOtpDto, } from '../users/dto/onboarding.dto';
 import { ChangePasswordDto } from '../users/dto/change-password.dto';
 import { AccountActionDto } from '../users/dto/account-action.dto';
+import { ReactivateAccountDto } from '../users/dto/reactivate-account.dto';
+import { Verify2faDto } from '../users/dto/verify-2fa.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { memoryStorage } from 'multer';
@@ -129,9 +136,87 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiResponse({ status: 200, description: 'Login successful', type: Object })
+  @ApiResponse({ status: 200, description: 'Account is deactivated (activate required)' })
   @ApiResponse({ status: 401, description: 'Invalid credentials or unverified email' })
-  async login(@Body() loginDto: LoginDto): Promise<AuthResponse> {
+  async login(
+    @Body() loginDto: LoginDto,
+  ): Promise<AuthResponse | DeactivatedAccountInfo | TwoFactorRequiredInfo> {
     return this.authService.login(loginDto);
+  }
+
+  // ========== TWO-FACTOR AUTHENTICATION ==========
+  @Post('2fa/login-verify')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Complete a 2FA-protected login with the emailed code' })
+  @ApiResponse({ status: 200, description: '2FA verified, logged in' })
+  @ApiResponse({ status: 401, description: 'Invalid or expired code' })
+  async verify2faLogin(@Body() verify2faDto: Verify2faDto): Promise<AuthResponse> {
+    return this.authService.verify2faLogin(verify2faDto);
+  }
+
+  @Post('2fa/resend-login-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Resend the 2FA login code to the user\'s email' })
+  async resend2faLoginOtp(@Body() body: { email: string }) {
+    return this.authService.resend2faLoginOtp(body?.email);
+  }
+
+  @Post('2fa/send-otp')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send the 2FA setup/disable code to the current user\'s email' })
+  async send2faOtp(
+    @CurrentUser('userId') userId: string,
+    @Body() body: { action: 'enable' | 'disable' },
+  ) {
+    if (body?.action === 'disable') {
+      return this.authService.send2faDisableOtp(userId);
+    }
+    return this.authService.send2faSetupOtp(userId);
+  }
+
+  @Post('2fa/enable')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Enable 2FA after verifying the emailed code' })
+  async enable2fa(
+    @CurrentUser('userId') userId: string,
+    @Body() body: { code: string },
+  ) {
+    return this.authService.enable2fa(userId, body?.code);
+  }
+
+  @Post('2fa/disable')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Disable 2FA after verifying the emailed code' })
+  async disable2fa(
+    @CurrentUser('userId') userId: string,
+    @Body() body: { code: string },
+  ) {
+    return this.authService.disable2fa(userId, body?.code);
+  }
+
+  @Post('reactivate-account/send-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send a reactivation OTP to the deactivated account\'s email' })
+  @ApiResponse({ status: 200, description: 'OTP sent' })
+  @ApiResponse({ status: 400, description: 'Account is not deactivated' })
+  async sendReactivationOtp(@Body() resendOtpDto: ResendOtpDto) {
+    return this.authService.sendReactivationOtp(resendOtpDto);
+  }
+
+  @Post('reactivate-account')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reactivate a deactivated account with OTP and log in' })
+  @ApiResponse({ status: 200, description: 'Account reactivated', type: Object })
+  @ApiResponse({ status: 401, description: 'Invalid credentials' })
+  @ApiResponse({ status: 400, description: 'Invalid OTP or account not deactivated' })
+  async reactivateAccount(@Body() dto: ReactivateAccountDto): Promise<AuthResponse> {
+    return this.authService.reactivateAccount(dto);
   }
 
   @Post('refresh')

@@ -26,6 +26,7 @@ import {
 } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { UpdatePrivacyDto } from './dto/update-privacy.dto';
 import { AddRecentSearchDto } from './dto/add-recent-search.dto';
 import { User } from './entities/user.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -64,6 +65,41 @@ export class UsersController {
   })
   async getMyStats(@CurrentUser('userId') userId: string) {
     return this.usersService.getUserStats(userId);
+  }
+
+  @Get('me/privacy')
+  @ApiOperation({ summary: 'Get current user privacy settings' })
+  @ApiResponse({ status: 200, description: 'Privacy settings' })
+  async getMyPrivacy(@CurrentUser('userId') userId: string) {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return {
+      privateProfile: user.privateProfile,
+      onlineStatus: user.onlineStatus,
+      readReceipts: user.readReceipts,
+      activityStatus: user.activityStatus,
+      dataSharing: user.dataSharing,
+    };
+  }
+
+  @Patch('me/privacy')
+  @ApiOperation({ summary: 'Update current user privacy settings' })
+  @ApiResponse({ status: 200, description: 'Updated privacy settings' })
+  @ApiBody({ type: UpdatePrivacyDto })
+  async updateMyPrivacy(
+    @CurrentUser('userId') userId: string,
+    @Body() dto: UpdatePrivacyDto,
+  ) {
+    const user = await this.usersService.updatePrivacy(userId, dto);
+    return {
+      privateProfile: user.privateProfile,
+      onlineStatus: user.onlineStatus,
+      readReceipts: user.readReceipts,
+      activityStatus: user.activityStatus,
+      dataSharing: user.dataSharing,
+    };
   }
 
   @Patch('me')
@@ -195,12 +231,37 @@ export class UsersController {
   @ApiOperation({ summary: 'Get user by ID' })
   @ApiParam({ name: 'id', description: 'User UUID' })
   @ApiResponse({ status: 200, description: 'User found', type: User })
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
+  async findOne(
+    @CurrentUser('userId') requesterId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     const user = await this.usersService.findById(id);
     if (!user) {
       throw new NotFoundException('User not found');
     }
     const { password, ...userWithoutPassword } = user;
+
+    // Private profiles are only visible to the owner and their followers
+    if (user.privateProfile && requesterId !== user.id) {
+      const isFollowing = await this.usersService.isFollowing(requesterId, user.id);
+      if (!isFollowing) {
+        return {
+          ...userWithoutPassword,
+          isPrivateProfile: true,
+          // Do not expose profile details of a private account to non-followers
+          firstName: undefined,
+          lastName: undefined,
+          bio: undefined,
+          email: undefined,
+          phoneNumber: undefined,
+          dateOfBirth: undefined,
+          school: undefined,
+          faculty: undefined,
+          department: undefined,
+        };
+      }
+    }
+
     return userWithoutPassword;
   }
 

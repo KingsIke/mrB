@@ -80,11 +80,27 @@ export class EventsService {
     return await this.eventRepository.save(event);
   }
 
+  // Helper to fetch user's schoolId securely
+  private async getUserSchoolId(userId: string): Promise<string> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'schoolId'],
+    });
+
+    if (!user || !user.schoolId) {
+      throw new NotFoundException('User or associated school not found');
+    }
+
+    return user.schoolId;
+  }
+
   async findAll(
-    schoolId: string,
+    userId: string,
     paginationDto: PaginationDto,
     category?: EventCategory,
   ): Promise<PaginatedResult<Event>> {
+    const schoolId = await this.getUserSchoolId(userId);
+
     const { page = 1, limit = 10 } = paginationDto;
     const skip = (page - 1) * limit;
 
@@ -105,9 +121,11 @@ export class EventsService {
   }
 
   async findUpcoming(
-    schoolId: string,
+    userId: string,
     paginationDto: PaginationDto,
   ): Promise<PaginatedResult<Event>> {
+    const schoolId = await this.getUserSchoolId(userId);
+
     const { page = 1, limit = 10 } = paginationDto;
     const skip = (page - 1) * limit;
     const today = new Date().toISOString().split('T')[0];
@@ -126,9 +144,11 @@ export class EventsService {
   }
 
   async findPast(
-    schoolId: string,
+    userId: string,
     paginationDto: PaginationDto,
   ): Promise<PaginatedResult<Event>> {
+    const schoolId = await this.getUserSchoolId(userId);
+
     const { page = 1, limit = 10 } = paginationDto;
     const skip = (page - 1) * limit;
     const today = new Date().toISOString().split('T')[0];

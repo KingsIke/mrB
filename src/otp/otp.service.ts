@@ -55,6 +55,36 @@ export class OtpService {
     await this.sendOtpEmail(user.email, code, expiryMinutes, purpose);
   }
 
+  // ========== REACTIVATION NOTIFICATION ==========
+  async sendReactivationEmail(user: User): Promise<void> {
+    const from = this.configService.get('SMTP_FROM', 'noreply@schoolsocial.app');
+    const displayName =
+      `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'there';
+
+    await this.transporter.sendMail({
+      from: `"School Social" <${from}>`,
+      to: user.email,
+      subject: 'Your Account Has Been Reactivated - School Social',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e9e9e9; border-radius: 12px; background: #ffffff;">
+          <h2 style="color: #333333; margin-top: 0;">Welcome back, ${displayName}! 👋</h2>
+          <p style="color: #555555; font-size: 16px; line-height: 1.5;">
+            Your <strong>School Social</strong> account has been reactivated and you are now logged in.
+          </p>
+          <p style="color: #555555; font-size: 16px; line-height: 1.5;">
+            If you didn't reactivate your account, please secure it immediately by
+            changing your password, and contact our support team.
+          </p>
+          <hr style="border: 0; border-top: 1px solid #eeeeee; margin: 24px 0;" />
+          <p style="color: #999999; font-size: 13px; line-height: 1.4;">
+            This is an automated message — please do not reply to this email.
+          </p>
+        </div>
+      `,
+      text: `Welcome back, ${displayName}! Your School Social account has been reactivated and you are now logged in. If you didn't reactivate your account, please change your password immediately.`,
+    });
+  }
+
   // ========== VERIFY OTP (WITH PURPOSE SECURITY) ==========
   async verifyOtp(
     userId: string, 
@@ -116,6 +146,20 @@ export class OtpService {
       heading = 'Password Reset Request';
       bodyText = 'We received a request to reset your password. Use the verification code below to proceed:';
       footerText = 'This is a secure action. If you did not request a password reset, please change your credentials immediately.';
+    }
+
+    if (purpose === OtpPurpose.ACCOUNT_REACTIVATION) {
+      subject = 'Reactivate Your Account - School Social';
+      heading = 'Reactivate Your Account';
+      bodyText = 'Use the verification code below to reactivate your account:';
+      footerText = 'If you did not request to reactivate your account, please ignore this email and secure your account.';
+    }
+
+    if (purpose === OtpPurpose.TWO_FACTOR_AUTH) {
+      subject = 'Your Login Code - School Social';
+      heading = 'Two-Factor Authentication';
+      bodyText = 'Use the verification code below to finish signing in:';
+      footerText = "If you didn't try to sign in, someone may have your password — change it immediately and secure your account.";
     }
 
     await this.transporter.sendMail({

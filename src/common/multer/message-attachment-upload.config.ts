@@ -14,7 +14,11 @@ const ALLOWED_MIMES = [
   'video/webm',
   // audio (voice notes)
   'audio/mpeg',
+  'audio/mp3',
   'audio/mp4',
+  'audio/m4a',
+  'audio/x-m4a',
+  'audio/aac',
   'audio/wav',
   'audio/webm',
   'audio/ogg',

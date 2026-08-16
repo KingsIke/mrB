@@ -150,6 +150,25 @@ bubbleColor: string;
 @Column({ nullable: true, default: 'default' })
 bubbleStyle: string;
 
+  // === Privacy Settings ===
+  @Column({ type: 'boolean', default: false })
+  privateProfile: boolean;
+
+  @Column({ type: 'boolean', default: true })
+  onlineStatus: boolean;
+
+  @Column({ type: 'boolean', default: true })
+  readReceipts: boolean;
+
+  @Column({ type: 'boolean', default: true })
+  activityStatus: boolean;
+
+  @Column({ type: 'boolean', default: true })
+  dataSharing: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  twoFactorEnabled: boolean;
+
   @Column({ type: 'boolean', default: false })
   "emailVerified": boolean;
 

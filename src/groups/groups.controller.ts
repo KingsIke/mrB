@@ -142,4 +142,14 @@ export class GroupsController {
   async leave(@CurrentUser('userId') userId: string, @Param('id') id: string) {
     await this.groupsService.leaveGroup(userId, id);
   }
+
+  @Post(':id/join')
+@HttpCode(HttpStatus.OK)
+@ApiOperation({ summary: 'Join a default interest group or public group' })
+async joinGroup(
+  @CurrentUser('userId') userId: string,
+  @Param('id') id: string,
+) {
+  return this.groupsService.joinGroup(userId, id);
+}
 }

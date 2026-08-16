@@ -38,6 +38,9 @@ export class MessageAttachment {
   @Column({ type: 'int', nullable: true })
   size: number | null;
 
+  @Column({ type: 'int', nullable: true })
+  durationMillis: number | null;
+
   @Column({ type: 'int', default: 0 })
   order: number;
 
