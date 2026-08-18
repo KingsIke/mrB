@@ -37,7 +37,7 @@ import { GroupMember } from '../groups/entities/group-member.entity';
 import { GroupMessage } from '../groups/entities/group-message.entity';
 import { MessageAttachment } from '../groups/entities/message-attachment.entity';
 import { MessageReaction } from '../groups/entities/message-reaction.entity';
-import { Note } from 'src/notes/entities/note.entity';
+import { Note } from '../notes/entities/note.entity';
 
 config();
 

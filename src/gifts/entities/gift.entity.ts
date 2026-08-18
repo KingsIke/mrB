@@ -8,11 +8,11 @@ export class Gift {
   @Column({ type: 'varchar', length: 100 })
   name: string;
 
-  @Column({ type: 'varchar', length: 10 })
-  emoji: string;
-
   @Column({ type: 'varchar', length: 500, nullable: true })
   animationUrl: string | null;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  videoUrl: string | null;
 
   @Column({ type: 'int' })
   coinCost: number;

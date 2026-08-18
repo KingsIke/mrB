@@ -9,6 +9,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
 import { CoinsService } from '../coins/coins.service';
 import { CoinTransactionType } from '../coins/entities/coin-transaction.entity';
+import { UsersService } from '../users/users.service';
+import { GamificationGateway } from './gamification.gateway';
 
 const SEED_LEVELS: Omit<Level, 'id'>[] = [
   { level: 1, title: 'Fresher', emoji: '🌱', minXp: 0, maxXp: 1_999, badge: 'fresher', color: '#22C55E', rewardCoins: 0, perks: ['Basic profile, post'] },
@@ -64,6 +66,8 @@ export class GamificationService {
     private readonly configRepository: Repository<GamificationConfig>,
     private readonly notificationsService: NotificationsService,
     private readonly coinsService: CoinsService,
+    private readonly usersService: UsersService,
+    private readonly gamificationGateway: GamificationGateway,
   ) {}
 
   
@@ -128,6 +132,19 @@ export class GamificationService {
         await this.coinsService.creditBalance(userId, newLevel.rewardCoins, CoinTransactionType.LEVEL_UP_REWARD, newLevel.id);
       }
       await this.notificationsService.notify(userId, null, NotificationType.LEVEL_UP);
+
+      // Let everybody currently online see the level-up moment live.
+      const user = await this.usersService.findById(userId);
+      this.gamificationGateway.broadcastLevelUp({
+        userId,
+        username: user?.username ?? null,
+        profilePictureUrl: user?.profilePictureUrl ?? null,
+        level: newLevel.level,
+        title: newLevel.title,
+        emoji: newLevel.emoji,
+        color: newLevel.color,
+        badge: newLevel.badge,
+      });
     }
 
     return { leveledUp, newLevel };

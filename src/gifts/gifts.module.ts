@@ -10,16 +10,20 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { PostsModule } from '../posts/posts.module';
 import { StoriesModule } from '../stories/stories.module';
 import { FollowsModule } from '../follows/follows.module';
+import { GroupsModule } from '../groups/groups.module';
+import { GroupMember } from '../groups/entities/group-member.entity';
+import { User } from '../users/entities/user.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Gift, GiftTransaction]),
+    TypeOrmModule.forFeature([Gift, GiftTransaction, GroupMember, User]),
     CoinsModule,
     GamificationModule,
     NotificationsModule,
     PostsModule,
     StoriesModule,
     FollowsModule,
+    GroupsModule,
   ],
   controllers: [GiftsController],
   providers: [GiftsService],

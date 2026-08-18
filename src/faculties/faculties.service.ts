@@ -3,21 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Faculty } from './entities/faculty.entity';
 import { SchoolsService } from '../schools/schools.service';
-
-// Keep this list in sync with the keys of `departmentsByFaculty` in DepartmentsService.seedDepartments,
-// since department seeding looks up departments by matching this exact faculty name.
-const FACULTY_NAMES = [
-  'Engineering',
-  'Science',
-  'Arts',
-  'Social Sciences',
-  'Law',
-  'Management Sciences',
-  'Education',
-  'Agriculture',
-  'Environmental Sciences',
-  'Medicine and Health Sciences',
-];
+import { getFacultiesForSchool } from '../database/data/faculties.data';
+import type { InstitutionType } from '../database/data/schools.data';
 
 @Injectable()
 export class FacultiesService {
@@ -50,17 +37,41 @@ export class FacultiesService {
     return this.facultyRepository.findOne({ where: { id } });
   }
 
+  /**
+   * Seeds the real faculty/school structure for every institution, keyed off
+   * the school's `type` (and shortName for well-known universities). Idempotent:
+   * skips (schoolId, name) pairs that already exist.
+   */
   async seedFaculties(): Promise<void> {
-    const count = await this.facultyRepository.count();
-    if (count > 0) return;
-
     const schools = await this.schoolsService.findAll();
 
+    const existing = await this.facultyRepository.find({
+      select: ['id', 'schoolId', 'name'],
+    });
+    const existingKeys = new Set(
+      existing.map((f) => `${f.schoolId}::${f.name.trim().toLowerCase()}`),
+    );
+
+    let created = 0;
+    let skipped = 0;
     for (const school of schools) {
-      for (const name of FACULTY_NAMES) {
-        const faculty = this.facultyRepository.create({ name, schoolId: school.id });
-        await this.facultyRepository.save(faculty);
+      const type = (school.type as InstitutionType) || 'university';
+      const names = getFacultiesForSchool(school.shortName, type);
+      for (const name of names) {
+        const key = `${school.id}::${name.trim().toLowerCase()}`;
+        if (existingKeys.has(key)) {
+          skipped++;
+          continue;
+        }
+        await this.facultyRepository.save(
+          this.facultyRepository.create({ name, schoolId: school.id }),
+        );
+        created++;
       }
     }
+
+    console.log(
+      `Faculties seeded: ${created} created, ${skipped} already present`,
+    );
   }
 }

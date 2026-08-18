@@ -3,38 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Department } from './entities/department.entity';
 import { FacultiesService } from '../faculties/faculties.service';
-
-// Keys must match the faculty names in FacultiesService's FACULTY_NAMES exactly,
-// since seeding looks up this map by each faculty's `name`.
-const DEPARTMENTS_BY_FACULTY: Record<string, string[]> = {
-  Engineering: [
-    'Mechanical Engineering',
-    'Electrical/Electronic Engineering',
-    'Civil Engineering',
-    'Computer Engineering',
-    'Chemical Engineering',
-  ],
-  Science: ['Computer Science', 'Physics', 'Chemistry', 'Mathematics', 'Biology', 'Microbiology'],
-  Arts: ['English', 'History', 'Linguistics', 'Philosophy', 'Theatre Arts'],
-  'Social Sciences': ['Economics', 'Political Science', 'Sociology', 'Psychology', 'Mass Communication'],
-  Law: ['Law'],
-  'Management Sciences': ['Accounting', 'Business Administration', 'Banking and Finance', 'Marketing'],
-  Education: ['Educational Administration', 'Curriculum Studies', 'Guidance and Counselling'],
-  Agriculture: ['Agricultural Economics', 'Animal Science', 'Crop Science', 'Soil Science'],
-  'Environmental Sciences': [
-    'Architecture',
-    'Urban and Regional Planning',
-    'Estate Management',
-    'Surveying and Geoinformatics',
-  ],
-  'Medicine and Health Sciences': [
-    'Medicine and Surgery',
-    'Nursing Science',
-    'Pharmacy',
-    'Physiology',
-    'Anatomy',
-  ],
-};
+import {
+  DEPARTMENTS_BY_FACULTY,
+  DEFAULT_DEPARTMENTS,
+} from '../database/data/departments.data';
 
 @Injectable()
 export class DepartmentsService {
@@ -60,18 +32,44 @@ export class DepartmentsService {
     return this.departmentRepository.findOne({ where: { id } });
   }
 
+  /**
+   * Seeds departments for every faculty using the faculty's exact name as the
+   * lookup key (falling back to DEFAULT_DEPARTMENTS for unknown names).
+   * Idempotent: skips (facultyId, name) pairs that already exist.
+   */
   async seedDepartments(): Promise<void> {
-    const count = await this.departmentRepository.count();
-    if (count > 0) return;
-
     const faculties = await this.facultiesService.findAll();
 
+    const existing = await this.departmentRepository.find({
+      select: ['id', 'facultyId', 'name'],
+    });
+    const existingKeys = new Set(
+      existing.map((d) => `${d.facultyId}::${d.name.trim().toLowerCase()}`),
+    );
+
+    let created = 0;
+    let skipped = 0;
     for (const faculty of faculties) {
-      const departmentNames = DEPARTMENTS_BY_FACULTY[faculty.name] || [];
-      for (const name of departmentNames) {
-        const department = this.departmentRepository.create({ name, facultyId: faculty.id });
-        await this.departmentRepository.save(department);
+      const names = [
+        ...new Set(
+          DEPARTMENTS_BY_FACULTY[faculty.name] || DEFAULT_DEPARTMENTS,
+        ),
+      ];
+      for (const name of names) {
+        const key = `${faculty.id}::${name.trim().toLowerCase()}`;
+        if (existingKeys.has(key)) {
+          skipped++;
+          continue;
+        }
+        await this.departmentRepository.save(
+          this.departmentRepository.create({ name, facultyId: faculty.id }),
+        );
+        created++;
       }
     }
+
+    console.log(
+      `Departments seeded: ${created} created, ${skipped} already present`,
+    );
   }
 }

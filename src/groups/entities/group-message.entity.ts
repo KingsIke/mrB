@@ -64,6 +64,19 @@ export class GroupMessage {
   @Column({ type: 'timestamptz', nullable: true })
   deletedAt: Date | null;
 
+  @Column({ type: 'boolean', default: false })
+  isPinned: boolean;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  pinnedAt: Date | null;
+
+  @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'pinnedById' })
+  pinnedBy: User | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  pinnedById: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 

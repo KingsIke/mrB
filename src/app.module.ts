@@ -26,6 +26,7 @@ import { AiModule } from './ai/ai.module';
 import { EventsModule } from './events/events.module';
 import { PastQuestionsModule } from './past-questions/past-questions.module';
 import { SupportModule } from './support/support.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { SupportModule } from './support/support.module';
     EventsModule,
     PastQuestionsModule,
     SupportModule,
+    AdminModule,
   ],
 })
 export class AppModule {}

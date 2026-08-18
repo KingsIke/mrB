@@ -5,6 +5,8 @@ import { User } from '../../users/entities/user.entity';
 export enum GiftTargetType {
   POST = 'post',
   STORY = 'story',
+  GROUP = 'group',
+  DM = 'dm',
 }
 
 @Entity('gift_transactions')
@@ -28,6 +30,10 @@ export class GiftTransaction {
 
   @Column({ type: 'uuid' })
   recipientId: string;
+
+  @ManyToOne(() => User, { nullable: false })
+  @JoinColumn({ name: 'recipientId' })
+  recipient: User;
 
   @Column({ type: 'enum', enum: GiftTargetType })
   targetType: GiftTargetType;

@@ -337,4 +337,101 @@ private async getMessageOrThrow(messageId: string, currentUserId?: string): Prom
       nextCursor: hasMore && last ? encodeCursor(last.createdAt, last.id) : null,
     };
   }
+
+  /**
+   * Get the currently pinned message for a group (if any).
+   */
+  async getPinnedMessage(userId: string, groupId: string): Promise<GroupMessage | null> {
+    const isMember = await this.groupsService.isMember(groupId, userId);
+    if (!isMember) {
+      throw new ForbiddenException('You are not a member of this group');
+    }
+
+    const pinned = await this.messageRepository.findOne({
+      where: { groupId, isPinned: true, isDeleted: false },
+      relations: { user: true, attachments: true, pinnedBy: true },
+    });
+
+    return pinned || null;
+  }
+
+/**
+   * Pin a message so it appears at the top of the chat for all group members.
+   * Any group member may pin messages. Only one message can be pinned at a
+   * time — pinning a new message auto-unpins the previous one.
+   */
+  async pinMessage(userId: string, groupId: string, messageId: string): Promise<GroupMessage> {
+    const isMember = await this.groupsService.isMember(groupId, userId);
+    if (!isMember) {
+      throw new ForbiddenException('You are not a member of this group');
+    }
+
+    const message = await this.getMessageOrThrow(messageId);
+    if (message.groupId !== groupId) {
+      throw new BadRequestException('Message does not belong to this group');
+    }
+    if (message.isDeleted) {
+      throw new BadRequestException('Cannot pin a deleted message');
+    }
+
+    // Unpin any currently pinned message in this group (only one pinned at a time)
+    await this.messageRepository
+      .createQueryBuilder()
+      .update(GroupMessage)
+      .set({ isPinned: false, pinnedAt: null, pinnedById: null })
+      .where('groupId = :groupId AND isPinned = true', { groupId })
+      .execute();
+
+    // Pin the new message, recording who performed the action
+    message.isPinned = true;
+    message.pinnedAt = new Date();
+    message.pinnedById = userId;
+    const saved = await this.messageRepository.save(message);
+
+    // Look up the acting user's public info for the broadcast payload —
+    // `saved` doesn't carry the `pinnedBy` relation since we only set the
+    // `pinnedById` column, not the relation object.
+    const actingMember = await this.groupMemberRepository.findOne({
+      where: { groupId, userId },
+      relations: { user: true },
+    });
+
+    // Broadcast to all members in real-time
+    this.groupsGateway.broadcastToGroup(groupId, GroupWebSocketEvents.MESSAGE_PINNED, {
+      groupId,
+      messageId: saved.id,
+      pinnedMessage: saved,
+      pinnedBy: actingMember?.user
+        ? { id: actingMember.user.id, username: actingMember.user.username }
+        : { id: userId },
+    });
+
+    return saved;
+  }
+
+  /**
+   * Unpin the currently pinned message in a group.
+   */
+  async unpinMessage(userId: string, groupId: string, messageId: string): Promise<void> {
+    const isMember = await this.groupsService.isMember(groupId, userId);
+    if (!isMember) {
+      throw new ForbiddenException('You are not a member of this group');
+    }
+
+    const message = await this.getMessageOrThrow(messageId);
+    if (message.groupId !== groupId) {
+      throw new BadRequestException('Message does not belong to this group');
+    }
+
+    message.isPinned = false;
+    message.pinnedAt = null;
+    message.pinnedById = null;
+    await this.messageRepository.save(message);
+
+    // Broadcast unpin to all members in real-time
+    this.groupsGateway.broadcastToGroup(groupId, GroupWebSocketEvents.MESSAGE_UNPINNED, {
+      groupId,
+      messageId: message.id,
+    });
+  }
 }

@@ -1,5 +1,5 @@
-import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Get, Post, Body, UseGuards, Query } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SchoolsService } from './schools.service';
 import { School } from './entities/school.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -13,9 +13,15 @@ export class SchoolsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get all schools' })
+  @ApiQuery({
+    name: 'type',
+    required: false,
+    description:
+      "Filter by institution type: university | polytechnic | college_of_education | school_of_nursing | other",
+  })
   @ApiResponse({ status: 200, description: 'List of schools', type: [School] })
-  async findAll() {
-    return this.schoolsService.findAll();
+  async findAll(@Query('type') type?: string) {
+    return this.schoolsService.findAll(type);
   }
 
   @Post('seed')

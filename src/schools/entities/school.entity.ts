@@ -19,6 +19,11 @@ export class School {
   @Column({ type: 'varchar', length: 255, nullable: true })
   shortName: string;
 
+  // Institution category: 'university' | 'polytechnic' | 'college_of_education'
+  // | 'school_of_nursing' | 'other' (nullable for legacy rows)
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  type: string;
+
   @Column({ type: 'varchar', length: 255, nullable: true })
   address: string;
 

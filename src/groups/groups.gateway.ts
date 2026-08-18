@@ -33,6 +33,9 @@ export enum GroupWebSocketEvents {
   USER_LEFT = 'user:left',
   ONLINE_LIST = 'user:online_list',
   USER_TYPING = 'user:typing',
+  GIFT_SENT = 'gift:sent',
+  MESSAGE_PINNED = 'message:pinned',
+  MESSAGE_UNPINNED = 'message:unpinned',
 }
 
 @Injectable()

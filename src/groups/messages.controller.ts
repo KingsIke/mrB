@@ -17,6 +17,15 @@ import { messageAttachmentUploadOptions } from '../common/multer/message-attachm
 export class MessagesController {
   constructor(private readonly messagesService: MessagesService) {}
 
+  @Get('pinned')
+  @ApiOperation({ summary: 'Get the currently pinned message in a group' })
+  async getPinned(
+    @CurrentUser('userId') userId: string,
+    @Param('groupId') groupId: string,
+  ) {
+    return this.messagesService.getPinnedMessage(userId, groupId);
+  }
+
   @Get()
   @ApiOperation({ summary: 'List messages in a group (cursor paginated)' })
   async list(
@@ -72,5 +81,26 @@ export class MessagesController {
   @ApiOperation({ summary: 'Remove your own reaction from a message' })
   async removeReaction(@CurrentUser('userId') userId: string, @Param('messageId') messageId: string) {
     await this.messagesService.removeReaction(userId, messageId);
+  }
+
+  @Patch(':messageId/pin')
+  @ApiOperation({ summary: 'Pin a message (admin only) — shows at top of chat for everyone' })
+  async pinMessage(
+    @CurrentUser('userId') userId: string,
+    @Param('groupId') groupId: string,
+    @Param('messageId') messageId: string,
+  ) {
+    return this.messagesService.pinMessage(userId, groupId, messageId);
+  }
+
+  @Delete(':messageId/pin')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Unpin a message (admin only)' })
+  async unpinMessage(
+    @CurrentUser('userId') userId: string,
+    @Param('groupId') groupId: string,
+    @Param('messageId') messageId: string,
+  ) {
+    await this.messagesService.unpinMessage(userId, groupId, messageId);
   }
 }
