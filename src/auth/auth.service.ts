@@ -7,6 +7,7 @@ import {
   NotFoundException,
   InternalServerErrorException,
 } from "@nestjs/common";
+import axios from "axios";
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import * as bcrypt from "bcrypt";
@@ -273,7 +274,7 @@ export class AuthService {
 
     const isPasswordValid = await bcrypt.compare(
       loginDto.password,
-      user.password,
+      user.password ?? '',
     );
     if (!isPasswordValid) {
       throw new UnauthorizedException("Invalid email or password");
@@ -778,6 +779,10 @@ export class AuthService {
       throw new NotFoundException("User not found");
     }
 
+    if (!user.password) {
+      throw new BadRequestException('Your account does not have a password. Please use Google Sign-In.');
+    }
+
     const isCurrentPasswordValid = await bcrypt.compare(
       changePasswordDto.currentPassword,
       user.password,
@@ -858,6 +863,10 @@ export class AuthService {
     const user = await this.usersService.findByEmail(dto.email);
     if (!user) {
       throw new UnauthorizedException("Invalid email or password");
+    }
+
+    if (!user.password) {
+      throw new UnauthorizedException('Your account does not have a password. Please use Google Sign-In.');
     }
 
     const isPasswordValid = await bcrypt.compare(
@@ -948,6 +957,10 @@ export class AuthService {
       );
     }
 
+    if (!user.password) {
+      throw new BadRequestException('Your account does not have a password. Please use Google Sign-In.');
+    }
+
     const isCurrentPasswordValid = await bcrypt.compare(
       accountActionDto.currentPassword,
       user.password,
@@ -982,6 +995,10 @@ export class AuthService {
       throw new BadRequestException(
         "This account has already been deleted.",
       );
+    }
+
+    if (!user.password) {
+      throw new BadRequestException('Your account does not have a password. Please use Google Sign-In.');
     }
 
     const isCurrentPasswordValid = await bcrypt.compare(
@@ -1123,6 +1140,89 @@ export class AuthService {
       available: !existingUser,
     };
   }
+
+  // ========== GOOGLE LOGIN ==========
+ async googleLogin(idToken: string): Promise<AuthResponse> {
+  // Verify the Google ID token by calling Google's tokeninfo endpoint
+  let googleUser: { email: string; sub: string; name?: string; picture?: string; given_name?: string; family_name?: string };
+  try {
+    const response = await axios.get(
+      `https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`,
+    );
+    googleUser = response.data;
+  } catch (error) {
+    throw new UnauthorizedException('Invalid or expired Google token');
+  }
+
+  if (!googleUser?.email) {
+    throw new UnauthorizedException('Could not extract email from Google token');
+  }
+
+  // Check if user already exists
+  const existingUser = await this.usersService.findByEmail(googleUser.email);
+
+  if (existingUser) {
+    // Existing user — link Google account if not already linked
+    if (!existingUser.googleId) {
+      await this.usersService.update(existingUser.id, {
+        googleId: googleUser.sub,
+        isEmailVerified: true,
+      });
+      existingUser.googleId = googleUser.sub;
+      existingUser.isEmailVerified = true;
+    }
+
+    // Handle deactivated accounts
+    if (existingUser.deactivatedAt) {
+      throw new UnauthorizedException('Your account has been deactivated. Please contact support.');
+    }
+
+    if (existingUser.deletedAt) {
+      throw new UnauthorizedException('This account has been deleted.');
+    }
+
+    // Handle 2FA
+    if (existingUser.twoFactorEnabled) {
+      await this.otpService.generateAndSendOtp(existingUser, OtpPurpose.TWO_FACTOR_AUTH);
+      return {
+        twoFactorRequired: true,
+        email: existingUser.email,
+        userId: existingUser.id,
+      } as any;
+    }
+
+    return this.buildAuthResponse(existingUser);
+  }
+
+  // New user — create account from Google data
+  const newUser = await this.usersService.create({
+    email: googleUser.email,
+    password: null, // No password for Google users
+    firstName: googleUser.given_name || googleUser.name?.split(' ')[0] || null,
+    lastName: googleUser.family_name || googleUser.name?.split(' ').slice(1).join(' ') || null,
+    profilePictureUrl: googleUser.picture || null,
+    isEmailVerified: true,
+    googleId: googleUser.sub,
+    status: UserStatus.PENDING_ONBOARDING,
+    onboardingStep: OnboardingStep.NONE,
+  } as any);
+
+  try {
+    await this.gamificationService.recordDailyLogin(newUser.id);
+  } catch (err) {
+    this.logger.error('Failed to record daily login for Google user', err);
+  }
+
+  const tokens = await this.generateTokens(newUser);
+  const { password, ...userWithoutPassword } = newUser;
+
+  return {
+    ...tokens,
+    user: userWithoutPassword,
+    onboardingRequired: true,
+    onboardingStep: OnboardingStep.NONE,
+  };
+}
 
   // ========== PRIVATE: Generate Tokens ==========
   private async generateTokens(

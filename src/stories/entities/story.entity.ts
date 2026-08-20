@@ -57,6 +57,9 @@ export class Story {
   @Column({ type: 'boolean', default: false })
   isHighlighted: boolean;
 
+  @Column({ type: 'boolean', default: false })
+  isHidden: boolean;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 }

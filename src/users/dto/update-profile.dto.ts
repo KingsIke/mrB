@@ -92,4 +92,10 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsString()
   bubbleStyle?: string;
+
+  @ApiPropertyOptional({ description: 'Profile frame ID (requires Level 6+)', example: 'gold-ring' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  profileFrame?: string;
 }

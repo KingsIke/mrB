@@ -9,6 +9,7 @@ import { Post } from '../posts/entities/post.entity';
 import { Story } from '../stories/entities/story.entity';
 import { CoinPurchase } from '../coins/entities/coin-purchase.entity';
 import { CoinTransaction } from '../coins/entities/coin-transaction.entity';
+import { PastQuestion } from '../past-questions/entities/past-question.entity';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
@@ -21,6 +22,7 @@ import { AuthModule } from '../auth/auth.module';
       Story,
       CoinPurchase,
       CoinTransaction,
+      PastQuestion,
     ]),
     AuthModule,
   ],

@@ -76,8 +76,21 @@ export class EventsService {
       schoolId: creator.schoolId,
       coverImage,
     });
+    const saved = await this.eventRepository.save(event);
 
-    return await this.eventRepository.save(event);
+    // Notify all schoolmates about the new event
+    try {
+      await this.notificationsService.notifySchoolmates(
+        userId,
+        NotificationType.EVENT_CREATED,
+        NotificationTargetType.EVENT,
+        saved.id,
+      );
+    } catch {
+      // best-effort — event creation should not fail due to notification errors
+    }
+
+    return saved;
   }
 
   // Helper to fetch user's schoolId securely

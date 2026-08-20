@@ -246,7 +246,7 @@ export class GiftsService {
 
     // Broadcast gift:sent to the group room so all online members see it
     // in real-time (for GROUP and DM target types)
-    if (dto.targetType === GiftTargetType.GROUP) {
+    if (dto.targetType === GiftTargetType.GROUP || dto.targetType === GiftTargetType.DM) {
       try {
         const senderUser = await this.userRepository.findOne({
           where: { id: senderId },

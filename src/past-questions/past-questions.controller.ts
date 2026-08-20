@@ -45,6 +45,12 @@ export class PastQuestionsController {
     return this.pqService.list(dto);
   }
 
+  @Get('top-contributors')
+  @ApiOperation({ summary: 'Top contributors who uploaded the most past questions in my department' })
+  async topContributors(@CurrentUser('userId') userId: string) {
+    return this.pqService.topContributors(userId);
+  }
+
   @Get('department')
   @ApiOperation({ summary: 'List past questions uploaded by users in my department' })
   async listDepartment(@CurrentUser('userId') userId: string, @Query() dto: ListPastQuestionsDto) {

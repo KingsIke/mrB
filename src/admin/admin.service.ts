@@ -27,6 +27,8 @@ import {
   CoinTransaction,
   CoinTransactionType,
 } from '../coins/entities/coin-transaction.entity';
+import { PastQuestion } from '../past-questions/entities/past-question.entity';
+import { PastQuestionAnalyticsQueryDto } from './dto/past-question-analytics.dto';
 import { UpdateGiftDto } from './dto/update-gift.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { UpdateVerificationDto } from './dto/update-verification.dto';
@@ -114,6 +116,8 @@ export class AdminService {
     private readonly coinTransactionRepository: Repository<CoinTransaction>,
     @InjectRepository(GiftTransaction)
     private readonly giftTransactionRepository: Repository<GiftTransaction>,
+    @InjectRepository(PastQuestion)
+    private readonly pastQuestionRepository: Repository<PastQuestion>,
   ) {}
 
   // ------------------------------------------------------------------
@@ -140,6 +144,79 @@ export class AdminService {
     }
     user.deletedAt = new Date();
     await this.userRepository.save(user);
+  }
+
+  // ------------------------------------------------------------------
+  // Bulk user actions
+  // ------------------------------------------------------------------
+
+  async bulkSetUserStatus(ids: string[], status: string): Promise<{
+    updated: string[];
+    notFound: string[];
+  }> {
+    const updated: string[] = [];
+    const notFound: string[] = [];
+
+    for (const id of ids) {
+      const user = await this.userRepository.findOne({ where: { id } });
+      if (!user) {
+        notFound.push(id);
+        continue;
+      }
+      user.status = status as UserStatus;
+      await this.userRepository.save(user);
+      updated.push(id);
+    }
+
+    return { updated, notFound };
+  }
+
+  async bulkDeleteUsers(ids: string[]): Promise<{
+    deleted: string[];
+    notFound: string[];
+  }> {
+    const deleted: string[] = [];
+    const notFound: string[] = [];
+
+    for (const id of ids) {
+      const user = await this.userRepository.findOne({ where: { id } });
+      if (!user) {
+        notFound.push(id);
+        continue;
+      }
+      user.deletedAt = new Date();
+      await this.userRepository.save(user);
+      deleted.push(id);
+    }
+
+    return { deleted, notFound };
+  }
+
+  async bulkSetVerification(ids: string[], status: string): Promise<{
+    updated: string[];
+    notFound: string[];
+    skipped: string[];
+  }> {
+    const updated: string[] = [];
+    const notFound: string[] = [];
+    const skipped: string[] = [];
+
+    for (const id of ids) {
+      const user = await this.userRepository.findOne({ where: { id } });
+      if (!user) {
+        notFound.push(id);
+        continue;
+      }
+      if (status === 'verified' && !user.schoolIdCardUrl && !user.administrationLetterUrl) {
+        skipped.push(id);
+        continue;
+      }
+      user.verificationStatus = status;
+      await this.userRepository.save(user);
+      updated.push(id);
+    }
+
+    return { updated, notFound, skipped };
   }
 
   // ------------------------------------------------------------------
@@ -235,6 +312,39 @@ export class AdminService {
     }
   }
 
+  /**
+   * Bulk delete gifts. Returns a summary of what succeeded, failed,
+   * or was deactivated instead (due to FK constraints).
+   */
+  async deleteGifts(ids: string[]): Promise<{
+    deleted: string[];
+    deactivated: string[];
+    notFound: string[];
+  }> {
+    const deleted: string[] = [];
+    const deactivated: string[] = [];
+    const notFound: string[] = [];
+
+    for (const id of ids) {
+      const gift = await this.giftRepository.findOne({ where: { id } });
+      if (!gift) {
+        notFound.push(id);
+        continue;
+      }
+      try {
+        await this.giftRepository.remove(gift);
+        deleted.push(id);
+      } catch {
+        // FK constraint — deactivate instead
+        gift.isActive = false;
+        await this.giftRepository.save(gift);
+        deactivated.push(id);
+      }
+    }
+
+    return { deleted, deactivated, notFound };
+  }
+
   // ------------------------------------------------------------------
   // Posts & Stories (moderation)
   // ------------------------------------------------------------------
@@ -248,6 +358,41 @@ export class AdminService {
     await this.postRepository.delete({ id });
   }
 
+  async hidePost(id: string, isHidden: boolean): Promise<{ id: string; isHidden: boolean }> {
+    const post = await this.postRepository.findOne({ where: { id } });
+    if (!post) {
+      throw new NotFoundException(`Post with ID "${id}" not found`);
+    }
+    post.isHidden = isHidden;
+    await this.postRepository.save(post);
+    return { id: post.id, isHidden: post.isHidden };
+  }
+
+  async bulkDeletePosts(ids: string[]): Promise<{ deleted: string[]; notFound: string[] }> {
+    const deleted: string[] = [];
+    const notFound: string[] = [];
+    for (const id of ids) {
+      const post = await this.postRepository.findOne({ where: { id } });
+      if (!post) { notFound.push(id); continue; }
+      await this.postRepository.delete({ id });
+      deleted.push(id);
+    }
+    return { deleted, notFound };
+  }
+
+  async bulkHidePosts(ids: string[], isHidden: boolean): Promise<{ updated: string[]; notFound: string[] }> {
+    const updated: string[] = [];
+    const notFound: string[] = [];
+    for (const id of ids) {
+      const post = await this.postRepository.findOne({ where: { id } });
+      if (!post) { notFound.push(id); continue; }
+      post.isHidden = isHidden;
+      await this.postRepository.save(post);
+      updated.push(id);
+    }
+    return { updated, notFound };
+  }
+
   async deleteStory(id: string): Promise<void> {
     const story = await this.storyRepository.findOne({ where: { id } });
     if (!story) {
@@ -255,6 +400,41 @@ export class AdminService {
     }
     // Views, reactions and replies cascade at the DB level.
     await this.storyRepository.delete({ id });
+  }
+
+  async hideStory(id: string, isHidden: boolean): Promise<{ id: string; isHidden: boolean }> {
+    const story = await this.storyRepository.findOne({ where: { id } });
+    if (!story) {
+      throw new NotFoundException(`Story with ID "${id}" not found`);
+    }
+    story.isHidden = isHidden;
+    await this.storyRepository.save(story);
+    return { id: story.id, isHidden: story.isHidden };
+  }
+
+  async bulkDeleteStories(ids: string[]): Promise<{ deleted: string[]; notFound: string[] }> {
+    const deleted: string[] = [];
+    const notFound: string[] = [];
+    for (const id of ids) {
+      const story = await this.storyRepository.findOne({ where: { id } });
+      if (!story) { notFound.push(id); continue; }
+      await this.storyRepository.delete({ id });
+      deleted.push(id);
+    }
+    return { deleted, notFound };
+  }
+
+  async bulkHideStories(ids: string[], isHidden: boolean): Promise<{ updated: string[]; notFound: string[] }> {
+    const updated: string[] = [];
+    const notFound: string[] = [];
+    for (const id of ids) {
+      const story = await this.storyRepository.findOne({ where: { id } });
+      if (!story) { notFound.push(id); continue; }
+      story.isHidden = isHidden;
+      await this.storyRepository.save(story);
+      updated.push(id);
+    }
+    return { updated, notFound };
   }
 
   // ------------------------------------------------------------------
@@ -427,6 +607,115 @@ export class AdminService {
     return {
       items: items.slice(offset, offset + limit),
       total: purchaseCount + giftCount + ledgerCount,
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // Past question analytics
+  // ------------------------------------------------------------------
+
+  async getPastQuestionAnalytics(query?: PastQuestionAnalyticsQueryDto): Promise<{
+    totalUploads: number;
+    totalDownloads: number;
+    totalRevenue: number;
+    topUploaders: {
+      user: AdminUserSummary;
+      uploadCount: number;
+      totalDownloads: number;
+      totalRevenue: number;
+    }[];
+    recentUploads: {
+      id: string;
+      course: string;
+      level: string;
+      session: string;
+      semester: string;
+      priceCoins: number;
+      downloadsCount: number;
+      uploader: AdminUserSummary;
+      createdAt: string;
+    }[];
+  }> {
+    const from = query?.from ? new Date(query.from) : undefined;
+    const to = query?.to ? new Date(query.to) : undefined;
+
+    // Aggregate stats
+    const statsQb = this.pastQuestionRepository
+      .createQueryBuilder('pq')
+      .select('COUNT(pq.id)', 'totalUploads')
+      .addSelect('SUM(pq.downloadsCount)', 'totalDownloads')
+      .addSelect('SUM(pq.priceCoins * pq.downloadsCount)', 'totalRevenue');
+    if (from && to) {
+      statsQb.where('pq.createdAt BETWEEN :from AND :to', { from, to });
+    } else if (from) {
+      statsQb.where('pq.createdAt >= :from', { from });
+    } else if (to) {
+      statsQb.where('pq.createdAt <= :to', { to });
+    }
+    const stats = await statsQb.getRawOne();
+
+    // Top uploaders
+    const topQb = this.pastQuestionRepository
+      .createQueryBuilder('pq')
+      .leftJoin('pq.uploader', 'uploader')
+      .select('uploader.id', 'userId')
+      .addSelect('COUNT(pq.id)', 'uploadCount')
+      .addSelect('SUM(pq.downloadsCount)', 'totalDownloads')
+      .addSelect('SUM(pq.priceCoins * pq.downloadsCount)', 'totalRevenue');
+    if (from && to) {
+      topQb.where('pq.createdAt BETWEEN :from AND :to', { from, to });
+    } else if (from) {
+      topQb.where('pq.createdAt >= :from', { from });
+    } else if (to) {
+      topQb.where('pq.createdAt <= :to', { to });
+    }
+    const topUploaders = await topQb
+      .groupBy('uploader.id')
+      .orderBy('"uploadCount"', 'DESC')
+      .limit(10)
+      .getRawMany();
+
+    const uploaderUsers = await this.loadUsers(topUploaders.map((r) => r.userId));
+
+    // Recent uploads
+    const recentQb = this.pastQuestionRepository
+      .createQueryBuilder('pq')
+      .leftJoinAndSelect('pq.uploader', 'uploader');
+    if (from && to) {
+      recentQb.where('pq.createdAt BETWEEN :from AND :to', { from, to });
+    } else if (from) {
+      recentQb.where('pq.createdAt >= :from', { from });
+    } else if (to) {
+      recentQb.where('pq.createdAt <= :to', { to });
+    }
+    const recentRaw = await recentQb
+      .orderBy('pq.createdAt', 'DESC')
+      .take(10)
+      .getMany();
+
+    return {
+      totalUploads: Number(stats?.totalUploads ?? 0),
+      totalDownloads: Number(stats?.totalDownloads ?? 0),
+      totalRevenue: Number(stats?.totalRevenue ?? 0),
+      topUploaders: topUploaders
+        .filter((r) => uploaderUsers.has(r.userId))
+        .map((r) => ({
+          user: this.toUserSummary(uploaderUsers.get(r.userId)!),
+          uploadCount: Number(r.uploadCount),
+          totalDownloads: Number(r.totalDownloads),
+          totalRevenue: Number(r.totalRevenue),
+        })),
+      recentUploads: recentRaw.map((pq) => ({
+        id: pq.id,
+        course: pq.course,
+        level: pq.level,
+        session: pq.session,
+        semester: pq.semester,
+        priceCoins: pq.priceCoins,
+        downloadsCount: pq.downloadsCount,
+        uploader: this.toUserSummary(pq.uploader),
+        createdAt: pq.createdAt.toISOString(),
+      })),
     };
   }
 

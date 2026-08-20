@@ -65,7 +65,21 @@ export class MarketplaceService {
       imageUrls: combinedImageUrls,
     });
 
-    return this.marketplaceRepository.save(item);
+    const saved = await this.marketplaceRepository.save(item);
+
+    // Notify all schoolmates about the new listing
+    try {
+      await this.notificationsService.notifySchoolmates(
+        userId,
+        NotificationType.MARKETPLACE_ITEM_LISTED,
+        NotificationTargetType.MARKETPLACE_ITEM,
+        saved.id,
+      );
+    } catch {
+      // best-effort — listing creation should not fail due to notification errors
+    }
+
+    return saved;
   }
 
 async findAll(options?: {

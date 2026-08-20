@@ -44,6 +44,8 @@ export enum GroupWebSocketEvents {
     origin: '*',
   },
   namespace: '/groups',
+  pingTimeout: 30000,
+  pingInterval: 25000,
 })
 export class GroupsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()

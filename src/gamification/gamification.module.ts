@@ -16,7 +16,7 @@ import { UsersModule } from '../users/users.module';
     TypeOrmModule.forFeature([Level, UserXp, XpTransaction, GamificationConfig]),
     NotificationsModule,
     forwardRef(() => CoinsModule),
-    UsersModule,
+    forwardRef(() => UsersModule),
   ],
   controllers: [GamificationController],
   providers: [GamificationService, GamificationGateway],

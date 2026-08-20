@@ -27,6 +27,7 @@ import {
   AdminLeaderboardQueryDto,
   AdminTransactionQueryDto,
 } from './dto/transaction-query.dto';
+import { PastQuestionAnalyticsQueryDto } from './dto/past-question-analytics.dto';
 import { Gift } from '../gifts/entities/gift.entity';
 import { User } from '../users/entities/user.entity';
 
@@ -58,6 +59,34 @@ export class AdminController {
   @ApiResponse({ status: 204, description: 'User deactivated' })
   async deleteUser(@Param('id', ParseUUIDPipe) id: string) {
     await this.adminService.deleteUser(id);
+  }
+
+  // ------------------------------------------------------------------
+  // Bulk user actions
+  // ------------------------------------------------------------------
+
+  @Patch('users/status')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Bulk set user status (admin)' })
+  @ApiResponse({ status: 200, description: 'Bulk status result' })
+  async bulkSetUserStatus(@Body() body: { ids: string[]; status: string }) {
+    return this.adminService.bulkSetUserStatus(body.ids, body.status);
+  }
+
+  @Delete('users')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Bulk soft-delete users (admin)' })
+  @ApiResponse({ status: 200, description: 'Bulk delete result' })
+  async bulkDeleteUsers(@Body() body: { ids: string[] }) {
+    return this.adminService.bulkDeleteUsers(body.ids);
+  }
+
+  @Patch('users/verification')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Bulk set verification status (admin)' })
+  @ApiResponse({ status: 200, description: 'Bulk verification result' })
+  async bulkSetVerification(@Body() body: { ids: string[]; status: string }) {
+    return this.adminService.bulkSetVerification(body.ids, body.status);
   }
 
   // ------------------------------------------------------------------
@@ -112,6 +141,14 @@ export class AdminController {
     await this.adminService.deleteGift(id);
   }
 
+  @Delete('gifts')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Bulk delete gifts (admin)' })
+  @ApiResponse({ status: 200, description: 'Bulk delete results' })
+  async deleteGifts(@Body() body: { ids: string[] }) {
+    return this.adminService.deleteGifts(body.ids);
+  }
+
   // ------------------------------------------------------------------
   // Posts & Stories (moderation)
   // ------------------------------------------------------------------
@@ -124,12 +161,60 @@ export class AdminController {
     await this.adminService.deletePost(id);
   }
 
+  @Patch('posts/:id/hide')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Hide/unhide a post (admin moderation)' })
+  @ApiResponse({ status: 200, description: 'Post hidden status toggled' })
+  async hidePost(@Param('id', ParseUUIDPipe) id: string, @Body() body: { isHidden: boolean }) {
+    return this.adminService.hidePost(id, body.isHidden);
+  }
+
+  @Delete('posts')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Bulk delete posts (admin)' })
+  @ApiResponse({ status: 200, description: 'Bulk delete result' })
+  async bulkDeletePosts(@Body() body: { ids: string[] }) {
+    return this.adminService.bulkDeletePosts(body.ids);
+  }
+
+  @Patch('posts/hide')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Bulk hide/unhide posts (admin)' })
+  @ApiResponse({ status: 200, description: 'Bulk hide result' })
+  async bulkHidePosts(@Body() body: { ids: string[]; isHidden: boolean }) {
+    return this.adminService.bulkHidePosts(body.ids, body.isHidden);
+  }
+
   @Delete('stories/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete any story (admin moderation)' })
   @ApiResponse({ status: 204, description: 'Story deleted' })
   async deleteStory(@Param('id', ParseUUIDPipe) id: string) {
     await this.adminService.deleteStory(id);
+  }
+
+  @Patch('stories/:id/hide')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Hide/unhide a story (admin moderation)' })
+  @ApiResponse({ status: 200, description: 'Story hidden status toggled' })
+  async hideStory(@Param('id', ParseUUIDPipe) id: string, @Body() body: { isHidden: boolean }) {
+    return this.adminService.hideStory(id, body.isHidden);
+  }
+
+  @Delete('stories')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Bulk delete stories (admin)' })
+  @ApiResponse({ status: 200, description: 'Bulk delete result' })
+  async bulkDeleteStories(@Body() body: { ids: string[] }) {
+    return this.adminService.bulkDeleteStories(body.ids);
+  }
+
+  @Patch('stories/hide')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Bulk hide/unhide stories (admin)' })
+  @ApiResponse({ status: 200, description: 'Bulk hide result' })
+  async bulkHideStories(@Body() body: { ids: string[]; isHidden: boolean }) {
+    return this.adminService.bulkHideStories(body.ids, body.isHidden);
   }
 
   // ------------------------------------------------------------------
@@ -155,5 +240,16 @@ export class AdminController {
   @ApiResponse({ status: 200, description: 'Paginated transaction feed' })
   getTransactions(@Query() query: AdminTransactionQueryDto) {
     return this.adminService.getTransactions(query);
+  }
+
+  // ------------------------------------------------------------------
+  // Past question analytics
+  // ------------------------------------------------------------------
+
+  @Get('analytics/past-questions')
+  @ApiOperation({ summary: 'Past question upload analytics (admin)' })
+  @ApiResponse({ status: 200, description: 'Past question stats, top uploaders, and recent uploads' })
+  getPastQuestionAnalytics(@Query() query: PastQuestionAnalyticsQueryDto) {
+    return this.adminService.getPastQuestionAnalytics(query);
   }
 }

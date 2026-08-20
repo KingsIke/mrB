@@ -51,8 +51,8 @@ export class User {
   @Column({ type: 'varchar', length: 255, unique: true })
   email: string;
 
-  @Column({ type: 'varchar', length: 255 })
-  password: string;
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  password: string | null;
 
   @Column({ type: 'timestamptz', nullable: true })
   passwordChangedAt: Date | null;
@@ -150,6 +150,9 @@ bubbleColor: string;
 @Column({ nullable: true, default: 'default' })
 bubbleStyle: string;
 
+@Column({ type: 'varchar', length: 50, nullable: true })
+profileFrame: string | null;
+
   // === Privacy Settings ===
   @Column({ type: 'boolean', default: false })
   privateProfile: boolean;
@@ -165,6 +168,15 @@ bubbleStyle: string;
 
   @Column({ type: 'boolean', default: true })
   dataSharing: boolean;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  googleId: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  pushToken: string | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  notificationPreferences: Record<string, boolean> | null;
 
   @Column({ type: 'boolean', default: false })
   twoFactorEnabled: boolean;

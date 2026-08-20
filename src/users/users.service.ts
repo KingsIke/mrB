@@ -6,7 +6,6 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, In, Not, Repository } from 'typeorm';
 import { User } from './entities/user.entity';
-import { UserSearchHistory } from './entities/user-search-history.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdatePrivacyDto } from './dto/update-privacy.dto';
@@ -16,6 +15,8 @@ import { Post } from 'src/posts/entities/post.entity';
 import { GiftTransaction } from 'src/gifts/entities/gift-transaction.entity';
 import { PostLike } from 'src/posts/entities/post-like.entity';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { UserXp } from 'src/gamification/entities/user-xp.entity';
+import { Level } from 'src/gamification/entities/level.entity';
 
 export interface UserProfileStats {
   postsCount: number;
@@ -38,9 +39,11 @@ export class UsersService {
     private readonly likeRepository: Repository<PostLike>,
     @InjectRepository(GiftTransaction)
     private readonly giftRepository: Repository<GiftTransaction>,
-    @InjectRepository(UserSearchHistory)
-    private readonly searchHistoryRepository: Repository<UserSearchHistory>,
     private readonly cloudinaryService: CloudinaryService,
+    @InjectRepository(UserXp)
+    private readonly userXpRepository: Repository<UserXp>,
+    @InjectRepository(Level)
+    private readonly levelRepository: Repository<Level>,
   ) {}
 
   async create(data: Partial<User>): Promise<User> {
@@ -223,12 +226,16 @@ export class UsersService {
         ? await this.getFollowingIdsSet(currentUserId, userIds)
         : new Set<string>();
 
+    const searchAppLevelMap = await this.resolveAppLevels(userIds);
+
     const items = users.map((user) => ({
       id: user.id,
       username: user.username,
       firstName: user.firstName,
       lastName: user.lastName,
       profilePictureUrl: user.profilePictureUrl,
+      profileFrame: user.profileFrame || null,
+      appLevel: searchAppLevelMap.get(user.id) || null,
       bio: user.bio,
       isFollowing: followingSet.has(user.id),
       school: user.school ? { id: user.school.id, name: user.school.name } : null,
@@ -239,35 +246,90 @@ export class UsersService {
     return { items };
   }
 
-  async getTrendingUsers(currentUserId?: string, limit = 10) {
-    const users = await this.userRepository.find({
-      relations: ['school', 'faculty', 'department'],
-      take: limit,
-      order: { createdAt: 'DESC' },
-    });
 
+  /**
+   * Resolve appLevel (full Level entity) for a set of user IDs.
+   * Returns a Map<userId, Level | null>.
+   */
+  private async resolveAppLevels(userIds: string[]): Promise<Map<string, any | null>> {
+    if (userIds.length === 0) return new Map();
+    const allLevels = await this.levelRepository.find({ order: { level: 'ASC' } });
+    const xpData = await this.userXpRepository.find({ where: { userId: In(userIds) } });
+    const xpMap = new Map(xpData.map((x) => [x.userId, x]));
+    const result = new Map<string, any | null>();
+    for (const uid of userIds) {
+      const xp = xpMap.get(uid);
+      const totalXp = xp?.totalXp ?? 0;
+      const matched = allLevels.find(
+        (lvl) => totalXp >= lvl.minXp && (lvl.maxXp === null || totalXp <= lvl.maxXp),
+      ) || allLevels[0] || null;
+      result.set(uid, matched || null);
+    }
+    return result;
+  }
+
+  async getTrendingUsers(currentUserId?: string, limit = 10) {
+    // 1. Fetch active, non-deleted users with their XP data
+    const users = await this.userRepository
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.school', 'school')
+      .leftJoinAndSelect('user.faculty', 'faculty')
+      .leftJoinAndSelect('user.department', 'department')
+      .where('user.status = :status', { status: 'active' })
+      .andWhere('user.deletedAt IS NULL')
+      .andWhere('user.isOnboardingComplete = :complete', { complete: true })
+      .orderBy('user.createdAt', 'DESC')
+      .take(limit * 5) // fetch more to rank in-memory
+      .getMany();
+
+    const userIds = users.map((u) => u.id);
+    if (userIds.length === 0) {
+      return { items: [] };
+    }
+
+    // 2. Fetch XP data for these users
+    const xpData = await this.userXpRepository.find({ where: { userId: In(userIds) } });
+    const xpMap = new Map(xpData.map((x) => [x.userId, x]));
+
+    // 3. Fetch follower counts for all these users
     const followerCounts = await this.followRepository
       .createQueryBuilder('follow')
       .select('follow.followingId', 'followingId')
-      .addSelect('COUNT(*)', 'followersCount')
+      .addSelect('COUNT(*)', 'count')
+      .where('follow.followingId IN (:...userIds)', { userIds })
       .groupBy('follow.followingId')
       .getRawMany();
-
-    const countMap = new Map<string, number>(
-      followerCounts.map((item) => [item.followingId, Number(item.followersCount)]),
+    const followerMap = new Map<string, number>(
+      followerCounts.map((r) => [r.followingId, Number(r.count)]),
     );
 
+    // 4. Rank: combination of level + followers
+    //    Score = (level * 1000) + followerCount
+    //    This puts higher-level users first, with followers as tiebreaker
     const rankedUsers = users
-      .map((user) => ({
-        ...user,
-        followerCount: countMap.get(user.id) ?? 0,
-      }))
-      .sort((a, b) => b.followerCount - a.followerCount || b.createdAt.getTime() - a.createdAt.getTime())
+      .map((user) => {
+        const xp = xpMap.get(user.id);
+        const level = xp?.currentLevel ?? 1;
+        const totalXp = xp?.totalXp ?? 0;
+        const followers = followerMap.get(user.id) ?? 0;
+        return {
+          ...user,
+          currentLevel: level,
+          totalXp,
+          followerCount: followers,
+          trendingScore: level * 1000 + followers,
+        };
+      })
+      .sort((a, b) => b.trendingScore - a.trendingScore || b.totalXp - a.totalXp)
       .slice(0, limit);
 
-    const userIds = rankedUsers.map((user) => user.id);
+    // 5. Check which ranked users the current user follows
+    const rankedIds = rankedUsers.map((u) => u.id);
+
+    // 6. Resolve appLevel for all ranked users
+    const appLevelMap = await this.resolveAppLevels(rankedIds);
     const followingSet = currentUserId
-      ? await this.getFollowingIdsSet(currentUserId, userIds)
+      ? await this.getFollowingIdsSet(currentUserId, rankedIds)
       : new Set<string>();
 
     return {
@@ -277,8 +339,13 @@ export class UsersService {
         firstName: user.firstName,
         lastName: user.lastName,
         profilePictureUrl: user.profilePictureUrl,
+        profileFrame: user.profileFrame || null,
         bio: user.bio,
         isFollowing: followingSet.has(user.id),
+        currentLevel: user.currentLevel,
+        totalXp: user.totalXp,
+        followerCount: user.followerCount,
+        appLevel: appLevelMap.get(user.id) || null,
         school: user.school ? { id: user.school.id, name: user.school.name } : null,
         faculty: user.faculty ? { id: user.faculty.id, name: user.faculty.name } : null,
         department: user.department ? { id: user.department.id, name: user.department.name } : null,
@@ -287,18 +354,28 @@ export class UsersService {
   }
 
   async getSuggestedUsers(currentUserId?: string, limit = 10) {
-    const where = currentUserId ? { id: Not(In([currentUserId])) } : {};
-    const suggested = await this.userRepository.find({
-      where,
-      relations: ['school', 'faculty', 'department'],
-      take: limit,
-      order: { createdAt: 'DESC' },
-    });
+    const qb = this.userRepository.createQueryBuilder('user')
+      .leftJoinAndSelect('user.school', 'school')
+      .leftJoinAndSelect('user.faculty', 'faculty')
+      .leftJoinAndSelect('user.department', 'department')
+      .where('school.id IS NOT NULL')
+      .andWhere('faculty.id IS NOT NULL')
+      .andWhere('department.id IS NOT NULL');
+
+    if (currentUserId) {
+      qb.andWhere('user.id != :currentUserId', { currentUserId });
+    }
+
+    const suggested = await qb
+      .take(limit)
+      .orderBy('user.createdAt', 'DESC')
+      .getMany();
 
     const userIds = suggested.map((user) => user.id);
     const followingSet = currentUserId
       ? await this.getFollowingIdsSet(currentUserId, userIds)
       : new Set<string>();
+    const suggestedAppLevelMap = await this.resolveAppLevels(userIds);
 
     return {
       items: suggested.map((user) => ({
@@ -307,6 +384,8 @@ export class UsersService {
         firstName: user.firstName,
         lastName: user.lastName,
         profilePictureUrl: user.profilePictureUrl,
+        profileFrame: user.profileFrame || null,
+        appLevel: suggestedAppLevelMap.get(user.id) || null,
         bio: user.bio,
         isFollowing: followingSet.has(user.id),
         school: user.school ? { id: user.school.id, name: user.school.name } : null,
@@ -316,109 +395,7 @@ export class UsersService {
     };
   }
 
-  // --------------------------------------------------------------------------
-  // 🔍 RECENT SEARCH HISTORY METHODS
-  // --------------------------------------------------------------------------
-
-  /**
-   * Fetch a user's recent search history.
-   */
-  async getRecentSearches(userId: string, limit = 10) {
-    const rows = await this.searchHistoryRepository.find({
-      where: { userId },
-      relations: [
-        'searchedUser',
-        'searchedUser.school',
-        'searchedUser.faculty',
-        'searchedUser.department',
-      ],
-      order: { createdAt: 'DESC' },
-      take: limit,
-    });
-
-    return {
-      items: rows
-        .filter((row) => row.searchedUser !== null)
-        .map((row) => {
-          const user = row.searchedUser;
-          return {
-            id: user.id,
-            username: user.username,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            profilePictureUrl: user.profilePictureUrl,
-            bio: user.bio,
-            school: user.school ? { id: user.school.id, name: user.school.name } : null,
-            faculty: user.faculty ? { id: user.faculty.id, name: user.faculty.name } : null,
-            department: user.department ? { id: user.department.id, name: user.department.name } : null,
-          };
-        }),
-    };
-  }
-
-  /**
-   * Add a user to recent search history (or move to top if existing).
-   * Automatically caps total search history at 10 items.
-   */
-  async addRecentSearch(userId: string, searchedUserId: string) {
-    if (userId === searchedUserId) return { success: true };
-
-    const searchedUser = await this.userRepository.findOne({ where: { id: searchedUserId } });
-    if (!searchedUser) {
-      throw new NotFoundException('Searched user not found');
-    }
-
-    // Remove old entry if exists to bump it to the top with a new timestamp
-    const existing = await this.searchHistoryRepository.findOne({
-      where: { userId, searchedUserId },
-    });
-
-    if (existing) {
-      await this.searchHistoryRepository.remove(existing);
-    }
-
-    const historyEntry = this.searchHistoryRepository.create({ userId, searchedUserId });
-    await this.searchHistoryRepository.save(historyEntry);
-
-    // Keep only the 10 most recent searches
-    const rows = await this.searchHistoryRepository.find({
-      where: { userId },
-      order: { createdAt: 'DESC' },
-    });
-
-    if (rows.length > 10) {
-      const stale = rows.slice(10);
-      await this.searchHistoryRepository.remove(stale);
-    }
-
-    return { success: true };
-  }
-
-  /**
-   * Remove a specific user from the search history.
-   */
-  async removeRecentSearch(userId: string, searchedUserId: string) {
-    const existing = await this.searchHistoryRepository.findOne({
-      where: { userId, searchedUserId },
-    });
-
-    if (existing) {
-      await this.searchHistoryRepository.remove(existing);
-    }
-
-    return { success: true };
-  }
-
-  /**
-   * Clear all recent search history for a user.
-   */
-  async clearAllRecentSearches(userId: string) {
-    await this.searchHistoryRepository.delete({ userId });
-    return { success: true };
-  }
-
-  // --------------------------------------------------------------------------
-  // ⚙️ HELPER & PROFILE UPDATE METHODS
+  // HELPER & PROFILE UPDATE METHODS
   // --------------------------------------------------------------------------
 
   private async getFollowingIdsSet(currentUserId: string, targetUserIds: string[]): Promise<Set<string>> {

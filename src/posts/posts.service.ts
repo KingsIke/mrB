@@ -170,6 +170,24 @@ export class PostsService {
       );
     }
 
+    
+    // Notify each tagged user
+    if (tags.length > 0) {
+      const actorName = user.firstName && user.lastName
+        ? user.firstName + ' ' + user.lastName
+        : user.firstName || user.lastName || user.username || 'Someone';
+      for (const tag of tags) {
+        await this.notificationsService.notify(
+          tag.taggedUserId,
+          userId,
+          NotificationType.POST_TAGGED,
+          NotificationTargetType.POST,
+          saved.id,
+          actorName,
+        );
+      }
+    }
+
     const fullPost = await this.getPostOrThrow(saved.id);
 
     // Real-time broadcast post creation
@@ -842,6 +860,20 @@ async getFeed(
       NotificationTargetType.POST,
       postId,
     );
+
+    // If replying to someone else's comment, also notify the parent comment author
+    if (dto.parentCommentId) {
+      const parentComment = await this.getCommentOrThrow(dto.parentCommentId);
+      if (parentComment.userId !== userId) {
+        await this.notificationsService.notify(
+          parentComment.userId,
+          userId,
+          NotificationType.COMMENT_REPLIED,
+          NotificationTargetType.POST,
+          postId,
+        );
+      }
+    }
 
     await this.gamificationService.awardXp(
       post.userId,

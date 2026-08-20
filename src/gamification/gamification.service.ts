@@ -218,6 +218,66 @@ export class GamificationService {
     return this.levelRepository.find({ order: { level: 'ASC' } });
   }
 
+  /**
+   * Get the perks array for a user's current level.
+   * Returns the perks from the highest level whose minXp <= user's totalXp.
+   */
+  async getLevelPerks(userId: string): Promise<string[]> {
+    const userXp = await this.getOrCreateUserXp(userId);
+    const level = await this.resolveLevel(userXp.totalXp);
+    return level?.perks ?? [];
+  }
+
+  /**
+   * Check if a user has a specific perk (by exact string match in their level perks).
+   */
+  async hasPerk(userId: string, perk: string): Promise<boolean> {
+    const perks = await this.getLevelPerks(userId);
+    return perks.includes(perk);
+  }
+
+  /**
+   * Get the full level info for a user (level number, title, perks, etc.).
+   */
+  async getUserLevel(userId: string): Promise<Level | null> {
+    const userXp = await this.getOrCreateUserXp(userId);
+    return this.resolveLevel(userXp.totalXp);
+  }
+
+  async createLevel(data: {
+    level: number;
+    title: string;
+    emoji: string;
+    minXp: number;
+    maxXp?: number | null;
+    badge: string;
+    color: string;
+    rewardCoins?: number;
+    perks?: string[];
+  }): Promise<Level> {
+    const level = this.levelRepository.create(data);
+    return this.levelRepository.save(level);
+  }
+
+  async updateLevel(id: string, data: Partial<{
+    level: number;
+    title: string;
+    emoji: string;
+    minXp: number;
+    maxXp?: number | null;
+    badge: string;
+    color: string;
+    rewardCoins: number;
+    perks: string[];
+  }>): Promise<Level> {
+    await this.levelRepository.update(id, data);
+    return this.levelRepository.findOneByOrFail({ id });
+  }
+
+  async deleteLevel(id: string): Promise<void> {
+    await this.levelRepository.delete(id);
+  }
+
 async getGiverLeaderboard(
     options: LeaderboardQueryOptions = {},
   ): Promise<LeaderboardUserXpResponse[]> {

@@ -82,7 +82,21 @@ export class PastQuestionsService {
       uploaderId: userId,
       priceCoins: dto.priceCoins ?? 0,
     });
-    return this.pqRepo.save(pq);
+    const saved = await this.pqRepo.save(pq);
+
+    // Notify all departmentmates about the new past question
+    try {
+      await this.notificationsService.notifyDepartmentmates(
+        userId,
+        NotificationType.PAST_QUESTION_UPLOADED,
+        NotificationTargetType.PAST_QUESTION,
+        saved.id,
+      );
+    } catch {
+      // best-effort
+    }
+
+    return saved;
   }
 
   async findById(id: string): Promise<PastQuestion | null> {
@@ -179,6 +193,43 @@ export class PastQuestionsService {
   }
 
   /** Purchase / Download logic remains unchanged */
+  /**
+   * Top contributors: users who uploaded the most past questions in the same department.
+   */
+  async topContributors(userId: string, limit = 10): Promise<any[]> {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user?.departmentId) return [];
+
+    const rows = await this.dataSource.query(
+      `SELECT
+         u.id AS "userId",
+         u."firstName",
+         u."lastName",
+         u."username",
+         u."profilePictureUrl",
+         u."profileFrame",
+         u."departmentId",
+         COUNT(pq.id)::int AS uploads,
+         lvl."level" AS "levelNumber",
+         lvl."badge",
+         lvl."emoji",
+         lvl."color",
+         lvl."title" AS "levelTitle",
+         EXISTS(SELECT 1 FROM "follows" f WHERE f."followerId" = $1 AND f."followingId" = u.id) AS "isFollowing"
+       FROM past_questions pq
+       JOIN users u ON u.id = pq."uploaderId"
+       LEFT JOIN "user_xp" ux ON ux."userId" = u.id
+       LEFT JOIN "levels" lvl ON ux."totalXp" >= lvl."minXp" AND (lvl."maxXp" IS NULL OR ux."totalXp" <= lvl."maxXp")
+       WHERE u."departmentId" = $2 AND u.id != $1
+       GROUP BY u.id, u."firstName", u."lastName", u."username", u."profilePictureUrl", u."profileFrame", u."departmentId", lvl."level", lvl."badge", lvl."emoji", lvl."color", lvl."title"
+       ORDER BY uploads DESC
+       LIMIT $3`,
+      [userId, user.departmentId, limit],
+    );
+
+    return rows;
+  }
+
   async purchaseAndGetFiles(pastQuestionId: string, buyerId: string): Promise<{ files: any[] }> {
     const pq = await this.pqRepo.findOne({ where: { id: pastQuestionId } });
     if (!pq) throw new NotFoundException('Past question not found');

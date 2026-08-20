@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Not, Repository } from 'typeorm';
-import { Group } from './entities/group.entity';
+import { Group, GroupType } from './entities/group.entity';
 import { GroupMember } from './entities/group-member.entity';
 import { GroupMessage } from './entities/group-message.entity';
 import { MessageAttachment, AttachmentType } from './entities/message-attachment.entity';
@@ -153,6 +153,9 @@ private async getMessageOrThrow(messageId: string, currentUserId?: string): Prom
     const fullMessage = await this.getMessageOrThrow(saved.id);
     this.groupsGateway.broadcastToGroup(groupId, GroupWebSocketEvents.MESSAGE_NEW, fullMessage);
 
+    // Determine if this is a DM so the push payload carries `isDM: true`
+    const isDM = group.type === GroupType.DIRECT;
+
     const members = await this.groupMemberRepository.find({ where: { groupId } });
     for (const member of members) {
       if (member.isMuted) continue;
@@ -162,6 +165,9 @@ private async getMessageOrThrow(messageId: string, currentUserId?: string): Prom
         NotificationType.GROUP_MESSAGE,
         NotificationTargetType.GROUP,
         groupId,
+        undefined,
+        undefined,
+        isDM ? { isDM: true, chatId: groupId } : undefined,
       );
     }
 

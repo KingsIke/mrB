@@ -20,6 +20,8 @@ import { CreateStoryDto } from './dto/create-story.dto';
 import { ReactStoryDto } from './dto/react-story.dto';
 import { ReplyStoryDto } from './dto/reply-story.dto';
 import { mediaUploadOptions } from '../common/multer/media-upload.config';
+import { RequirePerk } from '../gamification/decorators/require-perk.decorator';
+import { PerkGuard } from '../gamification/guards/perk.guard';
 
 @ApiTags('Stories')
 @Controller('stories')
@@ -29,6 +31,8 @@ export class StoriesController {
   constructor(private readonly storiesService: StoriesService) {}
 
   @Post()
+  @RequirePerk('Story highlights')
+  @UseGuards(PerkGuard)
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @UseInterceptors(FileInterceptor('media', mediaUploadOptions))
   @ApiConsumes('multipart/form-data')

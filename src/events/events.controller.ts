@@ -27,6 +27,8 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { EventCategory } from './entities/event.entity';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { PaginationDto } from './dto/pagination.dto';
+import { RequirePerk } from '../gamification/decorators/require-perk.decorator';
+import { PerkGuard } from '../gamification/guards/perk.guard';
 
 @ApiTags('Events')
 @Controller('events')
@@ -71,6 +73,8 @@ export class EventsController {
   }
 
   @Post()
+  @RequirePerk('Exclusive events')
+  @UseGuards(PerkGuard)
   @UseInterceptors(FileInterceptor('image'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Create a new campus event with optional image' })

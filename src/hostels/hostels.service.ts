@@ -44,7 +44,21 @@ export class HostelsService {
       school: { id: uploader.schoolId },
       imageUrls: [...(dto.imageUrls || []), ...imageUrls],
     });
-    return this.hostelRepository.save(hostel);
+    const saved = await this.hostelRepository.save(hostel);
+
+    // Notify all schoolmates about the new hostel listing
+    try {
+      await this.notificationsService.notifySchoolmates(
+        userId,
+        NotificationType.HOSTEL_LISTED,
+        NotificationTargetType.HOSTEL,
+        saved.id,
+      );
+    } catch {
+      // best-effort — listing creation should not fail due to notification errors
+    }
+
+    return saved;
   }
 
   async findAll(schoolId?: string): Promise<HostelListing[]> {

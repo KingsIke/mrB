@@ -28,6 +28,7 @@ export interface UserSummary {
   lastName: string;
   username: string;
   profilePictureUrl: string | null;
+  profileFrame: string | null;
 }
 
 interface DefaultGroupPreset {
@@ -546,19 +547,24 @@ async getDefaultGroups(): Promise<Group[]> {
     membership.lastReadAt = new Date();
     await this.groupMemberRepository.save(membership);
 
-    // Notify the other participant in a 1:1 chat that their messages were read,
-    // so the sender can flip their ticks in real time.
-    const other = await this.groupMemberRepository.findOne({
-      where: { groupId, userId: Not(userId) },
+    // Respect the reader's own read-receipts privacy setting before letting
+    // other members see that their messages were read.
+    const reader = await this.groupMemberRepository.findOne({
+      where: { groupId, userId },
       relations: { user: true },
     });
-    if (other && other.user && other.user.readReceipts !== false) {
-      this.groupsGateway.sendToUser(other.userId, GroupWebSocketEvents.MESSAGE_READ, {
-        groupId,
-        userId,
-        lastReadAt: membership.lastReadAt,
-      });
+    if (reader?.user?.readReceipts === false) {
+      return;
     }
+
+    // Broadcast to the whole room (not just one arbitrary "other" member) so
+    // this reflects correctly for groups with more than two members, not
+    // just 1:1 DMs. Recipients ignore their own read events client-side.
+    this.groupsGateway.broadcastToGroup(groupId, GroupWebSocketEvents.MESSAGE_READ, {
+      groupId,
+      userId,
+      lastReadAt: membership.lastReadAt,
+    });
   }
 
   async getGroupDetail(userId: string, groupId: string): Promise<Group> {
@@ -765,6 +771,7 @@ async getDefaultGroups(): Promise<Group[]> {
               lastName: other.user.lastName,
               username: other.user.username,
               profilePictureUrl: other.user.profilePictureUrl,
+              profileFrame: other.user.profileFrame || null,
             }
           : null;
 

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { GamificationService, LeaderboardScope } from './gamification.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -90,5 +90,55 @@ export class GamificationController {
   async seedLevels() {
     await this.gamificationService.seedLevels();
     return { message: 'Levels seeded successfully' };
+  }
+
+  // ========== Admin Level Management ==========
+
+  @Get('admin/levels')
+  @ApiOperation({ summary: 'Admin: Get all levels' })
+  async adminGetLevels() {
+    return this.gamificationService.getLevels();
+  }
+
+  @Post('admin/levels')
+  @ApiOperation({ summary: 'Admin: Create a new level' })
+  async adminCreateLevel(@Body() body: {
+    level: number;
+    title: string;
+    emoji: string;
+    minXp: number;
+    maxXp?: number | null;
+    badge: string;
+    color: string;
+    rewardCoins?: number;
+    perks?: string[];
+  }) {
+    return this.gamificationService.createLevel(body);
+  }
+
+  @Patch('admin/levels/:id')
+  @ApiOperation({ summary: 'Admin: Update a level' })
+  async adminUpdateLevel(
+    @Param('id') id: string,
+    @Body() body: Partial<{
+      level: number;
+      title: string;
+      emoji: string;
+      minXp: number;
+      maxXp?: number | null;
+      badge: string;
+      color: string;
+      rewardCoins: number;
+      perks: string[];
+    }>
+  ) {
+    return this.gamificationService.updateLevel(id, body);
+  }
+
+  @Delete('admin/levels/:id')
+  @ApiOperation({ summary: 'Admin: Delete a level' })
+  async adminDeleteLevel(@Param('id') id: string) {
+    await this.gamificationService.deleteLevel(id);
+    return { message: 'Level deleted successfully' };
   }
 }

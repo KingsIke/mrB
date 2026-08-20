@@ -25,9 +25,9 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { UsersService } from './users.service';
+import { GamificationService } from '../gamification/gamification.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdatePrivacyDto } from './dto/update-privacy.dto';
-import { AddRecentSearchDto } from './dto/add-recent-search.dto';
 import { User } from './entities/user.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -39,7 +39,10 @@ import { FileInterceptor } from '@nestjs/platform-express';
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly gamificationService: GamificationService,
+  ) {}
 
   // --------------------------------------------------------------------------
   // 👤 PROFILE / ME ROUTES
@@ -54,7 +57,10 @@ export class UsersController {
       throw new NotFoundException('User not found');
     }
     const { password, ...userWithoutPassword } = user;
-    return userWithoutPassword;
+
+    // Attach level perks so the frontend knows what features are unlocked
+    const perks = await this.gamificationService.getLevelPerks(userId);
+    return { ...userWithoutPassword, perks };
   }
 
   @Get('me/stats')
@@ -141,41 +147,6 @@ export class UsersController {
     @Query('limit') limit?: number,
   ) {
     return this.usersService.searchUsers(query, userId, limit ? Number(limit) : 10);
-  }
-
-  @Get('search/recent')
-  @ApiOperation({ summary: "Get user's recent search history" })
-  async getRecentSearches(
-    @CurrentUser('userId') userId: string,
-    @Query('limit') limit?: number,
-  ) {
-    return this.usersService.getRecentSearches(userId, limit ? Number(limit) : 10);
-  }
-
-  @Post('search/recent')
-  @ApiOperation({ summary: 'Record a user search click' })
-  @ApiBody({ type: AddRecentSearchDto })
-  async addRecentSearch(
-    @CurrentUser('userId') userId: string,
-    @Body() dto: AddRecentSearchDto,
-  ) {
-    return this.usersService.addRecentSearch(userId, dto.searchedUserId);
-  }
-
-  @Delete('search/recent/:searchedUserId')
-  @ApiOperation({ summary: 'Delete a specific recent search entry' })
-  @ApiParam({ name: 'searchedUserId', description: 'UUID of the searched user to remove' })
-  async removeRecentSearch(
-    @CurrentUser('userId') userId: string,
-    @Param('searchedUserId', ParseUUIDPipe) searchedUserId: string,
-  ) {
-    return this.usersService.removeRecentSearch(userId, searchedUserId);
-  }
-
-  @Delete('search/recent')
-  @ApiOperation({ summary: 'Clear all recent search entries' })
-  async clearAllRecentSearches(@CurrentUser('userId') userId: string) {
-    return this.usersService.clearAllRecentSearches(userId);
   }
 
   @Get('trending')

@@ -5,6 +5,8 @@ import { GroupsService } from './groups.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CreateGroupDto } from './dto/create-group.dto';
+import { RequirePerk } from '../gamification/decorators/require-perk.decorator';
+import { PerkGuard } from '../gamification/guards/perk.guard';
 import { UpdateGroupDto } from './dto/update-group.dto';
 import { LockGroupDto } from './dto/lock-group.dto';
 import { MuteGroupDto } from './dto/mute-group.dto';
@@ -19,6 +21,8 @@ export class GroupsController {
   constructor(private readonly groupsService: GroupsService) {}
 
   @Post()
+  @RequirePerk('Create Groups')
+  @UseGuards(PerkGuard)
   @UseInterceptors(FileInterceptor('icon', mediaUploadOptions))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Create a custom group (caller becomes admin)' })

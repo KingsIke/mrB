@@ -6,6 +6,7 @@ export enum NotificationType {
   POST_COMMENTED = 'post_commented',
   POST_RESHARED = 'post_reshared',
   COMMENT_LIKED = 'comment_liked',
+  COMMENT_REPLIED = 'comment_replied',
   GIFT_RECEIVED = 'gift_received',
   LEVEL_UP = 'level_up',
   STORY_REPLY = 'story_reply',
@@ -16,6 +17,11 @@ export enum NotificationType {
   MARKETPLACE_LIKED = 'marketplace_liked',
   EVENT_RSVP = 'event_rsvp',
   NEW_FOLLOWER = 'new_follower',
+  MARKETPLACE_ITEM_LISTED = 'marketplace_item_listed',
+  HOSTEL_LISTED = 'hostel_listed',
+  EVENT_CREATED = 'event_created',
+  POST_TAGGED = 'post_tagged',
+  PAST_QUESTION_UPLOADED = 'past_question_uploaded',
 }
 
 export enum NotificationTargetType {
@@ -58,6 +64,9 @@ export class Notification {
 
   @Column({ type: 'uuid', nullable: true })
   targetId: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  message: string | null;
 
   @Column({ type: 'boolean', default: false })
   isRead: boolean;

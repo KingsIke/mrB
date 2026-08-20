@@ -27,6 +27,7 @@ import { CompleteOnboardingDto, ForgotPasswordDto, ResetPasswordWithTokenDto, Ve
 import { ChangePasswordDto } from '../users/dto/change-password.dto';
 import { AccountActionDto } from '../users/dto/account-action.dto';
 import { ReactivateAccountDto } from '../users/dto/reactivate-account.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
 import { Verify2faDto } from '../users/dto/verify-2fa.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -142,6 +143,15 @@ export class AuthController {
     @Body() loginDto: LoginDto,
   ): Promise<AuthResponse | DeactivatedAccountInfo | TwoFactorRequiredInfo> {
     return this.authService.login(loginDto);
+  }
+
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Login or register with Google ID token' })
+  @ApiResponse({ status: 200, description: 'Google auth successful' })
+  @ApiResponse({ status: 401, description: 'Invalid Google token' })
+  async googleLogin(@Body() googleLoginDto: GoogleLoginDto) {
+    return this.authService.googleLogin(googleLoginDto.idToken);
   }
 
   // ========== TWO-FACTOR AUTHENTICATION ==========
