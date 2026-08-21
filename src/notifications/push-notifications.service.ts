@@ -92,16 +92,27 @@ const NOTIFICATION_MESSAGES: Record<NotificationType, { title: string; body: (ac
 };
 
 /**
- * Maps each notification type to an Android notification channel.
- * The channel determines the sound & vibration pattern on Android.
- *
- * Channels must match the IDs created on the client in usePushNotifications.ts:
+ * Maps each notification type to a channel key. The key is also used to check
+ * per-category muting in a user's notification preferences (see ANDROID_CHANNEL_ID
+ * below for the actual Android channel id this maps to):
  *   "default"  – general
  *   "social"   – likes, comments, follows, shares, story reactions
  *   "messages" – group / DM messages
  *   "gifts"    – gift received
  *   "system"   – level ups, purchases, uploads
  */
+// Maps a channel key to the actual Android notification channel id created on the client.
+// "default"/"social"/"system" were bumped to "_v2" ids because the original channels were
+// created without an explicit sound, which Android permanently locks in as silent — the
+// channel key itself (used below for muting preferences) stays the same.
+const ANDROID_CHANNEL_ID: Record<string, string> = {
+  default: 'default_v2',
+  social: 'social_v2',
+  messages: 'messages',
+  gifts: 'gifts',
+  system: 'system_v2',
+};
+
 const CHANNEL_MAP: Record<NotificationType, string> = {
   [NotificationType.POST_LIKED]: 'social',
   [NotificationType.POST_COMMENTED]: 'social',
@@ -209,7 +220,7 @@ export class PushNotificationsService {
       title: messageConfig.title,
       body: messageConfig.body(actorName, extra),
       sound: 'default',
-      channelId: CHANNEL_MAP[type] ?? 'default',
+      channelId: ANDROID_CHANNEL_ID[CHANNEL_MAP[type] ?? 'default'],
       data: data ?? { type },
     };
 
@@ -236,7 +247,7 @@ export class PushNotificationsService {
     const messageConfig = NOTIFICATION_MESSAGES[type];
     if (!messageConfig) return;
 
-    const channelId = CHANNEL_MAP[type] ?? 'default';
+    const channelId = ANDROID_CHANNEL_ID[CHANNEL_MAP[type] ?? 'default'];
 
     const messages: ExpoPushMessage[] = users
       .filter((u) => u.pushToken)
@@ -280,7 +291,7 @@ export class PushNotificationsService {
         title,
         body,
         sound: 'default',
-        channelId: 'default',
+        channelId: ANDROID_CHANNEL_ID.default,
         data,
       },
     ]);
