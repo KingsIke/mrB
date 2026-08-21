@@ -36,13 +36,13 @@ import { GroupMember } from '../groups/entities/group-member.entity';
 import { GroupMessage } from '../groups/entities/group-message.entity';
 import { MessageAttachment } from '../groups/entities/message-attachment.entity';
 import { MessageReaction } from '../groups/entities/message-reaction.entity';
-import { Note } from 'src/notes/entities/note.entity';
+import { Note } from '../notes/entities/note.entity';
 import { HostelListing } from '../hostels/entities/hostel-listing.entity';
 import { HostelLike } from '../hostels/entities/hostel-like.entity';
 import { MarketplaceItem } from '../marketplace/entities/marketplace-item.entity';
 import { MarketplaceLike } from '../marketplace/entities/marketplace-like.entity';
-import { ChatMessage } from 'src/ai/entities/chat-message.entity';
-import { ChatSession } from 'src/ai/entities/chat-session.entity';
+import { ChatMessage } from '../ai/entities/chat-message.entity';
+import { ChatSession } from '../ai/entities/chat-session.entity';
 
 export const databaseConfig: TypeOrmModuleAsyncOptions = {
   imports: [ConfigModule],

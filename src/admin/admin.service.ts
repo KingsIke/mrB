@@ -28,7 +28,12 @@ import {
   CoinTransactionType,
 } from '../coins/entities/coin-transaction.entity';
 import { PastQuestion } from '../past-questions/entities/past-question.entity';
+import { Job, JobStatus } from '../jobs/entities/job.entity';
+import { JobApplication, ApplicationStatus } from '../jobs/entities/job-application.entity';
 import { PastQuestionAnalyticsQueryDto } from './dto/past-question-analytics.dto';
+import { CreateJobDto } from './dto/create-job.dto';
+import { UpdateJobDto } from './dto/update-job.dto';
+import { UpdateJobStatusDto } from './dto/update-job-status.dto';
 import { UpdateGiftDto } from './dto/update-gift.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { UpdateVerificationDto } from './dto/update-verification.dto';
@@ -118,6 +123,10 @@ export class AdminService {
     private readonly giftTransactionRepository: Repository<GiftTransaction>,
     @InjectRepository(PastQuestion)
     private readonly pastQuestionRepository: Repository<PastQuestion>,
+    @InjectRepository(Job)
+    private readonly jobRepository: Repository<Job>,
+    @InjectRepository(JobApplication)
+    private readonly jobApplicationRepository: Repository<JobApplication>,
   ) {}
 
   // ------------------------------------------------------------------
@@ -435,6 +444,194 @@ export class AdminService {
       updated.push(id);
     }
     return { updated, notFound };
+  }
+
+  // ------------------------------------------------------------------
+  // Jobs
+  // ------------------------------------------------------------------
+
+  /** Admin creates a job — postedById is set to the admin user. */
+  async createJob(adminId: string, dto: CreateJobDto): Promise<Job> {
+    const job = this.jobRepository.create({
+      ...dto,
+      postedById: adminId,
+      status: JobStatus.OPEN,
+      applicationsCount: 0,
+    } as Partial<Job>);
+    return this.jobRepository.save(job);
+  }
+
+  /** List all jobs with optional filters (admin sees all statuses). */
+  async listJobs(query: {
+    q?: string;
+    type?: string;
+    status?: string;
+    schoolId?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const { q, type, status, schoolId, page = 1, limit = 20 } = query;
+    const qb = this.jobRepository
+      .createQueryBuilder('job')
+      .leftJoinAndSelect('job.postedBy', 'postedBy')
+      .orderBy('job.createdAt', 'DESC');
+
+    if (q) {
+      qb.andWhere(
+        '(job.title ILIKE :q OR job.company ILIKE :q OR job.description ILIKE :q OR job.location ILIKE :q)',
+        { q: `%${q}%` },
+      );
+    }
+    if (type) qb.andWhere('job.type = :type', { type });
+    if (status) qb.andWhere('job.status = :status', { status });
+    if (schoolId) qb.andWhere('job.schoolId = :schoolId', { schoolId });
+
+    const total = await qb.getCount();
+    const items = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getMany();
+
+    return { items, total, page, totalPages: Math.ceil(total / limit) };
+  }
+
+  /** Admin updates any job. */
+  async updateJob(id: string, dto: UpdateJobDto): Promise<Job> {
+    const job = await this.jobRepository.findOne({ where: { id } });
+    if (!job) throw new NotFoundException(`Job with ID "${id}" not found`);
+    Object.assign(job, dto);
+    return this.jobRepository.save(job);
+  }
+
+  /** Admin sets the status of any job. */
+  async updateJobStatus(id: string, dto: UpdateJobStatusDto): Promise<Job> {
+    const job = await this.jobRepository.findOne({ where: { id } });
+    if (!job) throw new NotFoundException(`Job with ID "${id}" not found`);
+    job.status = dto.status;
+    return this.jobRepository.save(job);
+  }
+
+  /** Admin deletes any job. */
+  async deleteJob(id: string): Promise<void> {
+    const job = await this.jobRepository.findOne({ where: { id } });
+    if (!job) throw new NotFoundException(`Job with ID "${id}" not found`);
+    await this.jobRepository.delete({ id });
+  }
+
+  /** Admin views all applications for a job. */
+  async getJobApplications(jobId: string): Promise<JobApplication[]> {
+    const job = await this.jobRepository.findOne({ where: { id: jobId } });
+    if (!job) throw new NotFoundException(`Job with ID "${jobId}" not found`);
+    return this.jobApplicationRepository.find({
+      where: { jobId },
+      relations: ['user', 'job'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  /** Admin updates any application's status. */
+  async updateJobApplicationStatus(
+    appId: string,
+    status: string,
+  ): Promise<JobApplication> {
+    const app = await this.jobApplicationRepository.findOne({
+      where: { id: appId },
+      relations: ['job'],
+    });
+    if (!app) throw new NotFoundException(`Application with ID "${appId}" not found`);
+    app.status = status as any;
+    return this.jobApplicationRepository.save(app);
+  }
+
+  /** Bulk delete multiple jobs. */
+  async bulkDeleteJobs(ids: string[]): Promise<{ deleted: string[]; notFound: string[] }> {
+    const deleted: string[] = [];
+    const notFound: string[] = [];
+    for (const id of ids) {
+      const job = await this.jobRepository.findOne({ where: { id } });
+      if (!job) {
+        notFound.push(id);
+        continue;
+      }
+      await this.jobRepository.delete({ id });
+      deleted.push(id);
+    }
+    return { deleted, notFound };
+  }
+
+  /** Bulk update status for multiple jobs. */
+  async bulkUpdateJobStatus(ids: string[], status: JobStatus): Promise<{ updated: string[]; notFound: string[] }> {
+    const updated: string[] = [];
+    const notFound: string[] = [];
+    for (const id of ids) {
+      const job = await this.jobRepository.findOne({ where: { id } });
+      if (!job) {
+        notFound.push(id);
+        continue;
+      }
+      job.status = status;
+      await this.jobRepository.save(job);
+      updated.push(id);
+    }
+    return { updated, notFound };
+  }
+
+  /** Aggregate job stats for the admin dashboard. */
+  async getJobStats(): Promise<{
+    totalJobs: number;
+    openJobs: number;
+    closedJobs: number;
+    filledJobs: number;
+    adminJobs: number;
+    featuredJobs: number;
+    totalApplications: number;
+    pendingApplications: number;
+    recentJobs: {
+      id: string;
+      title: string;
+      company: string;
+      status: string;
+      type: string;
+      applicationsCount: number;
+      createdAt: string;
+    }[];
+  }> {
+    const [totalJobs, openJobs, closedJobs, filledJobs, adminJobs, featuredJobs, totalApplications, pendingApplications] =
+      await Promise.all([
+        this.jobRepository.count(),
+        this.jobRepository.count({ where: { status: JobStatus.OPEN } }),
+        this.jobRepository.count({ where: { status: JobStatus.CLOSED } }),
+        this.jobRepository.count({ where: { status: JobStatus.FILLED } }),
+        this.jobRepository.count({ where: { status: JobStatus.ADMIN } }),
+        this.jobRepository.count({ where: { featured: true } }),
+        this.jobApplicationRepository.count(),
+        this.jobApplicationRepository.count({ where: { status: ApplicationStatus.PENDING } }),
+      ]);
+
+    const recentJobs = await this.jobRepository.find({
+      order: { createdAt: 'DESC' },
+      take: 5,
+    });
+
+    return {
+      totalJobs,
+      openJobs,
+      closedJobs,
+      filledJobs,
+      adminJobs,
+      featuredJobs,
+      totalApplications,
+      pendingApplications,
+      recentJobs: recentJobs.map((j) => ({
+        id: j.id,
+        title: j.title,
+        company: j.company,
+        status: j.status,
+        type: j.type,
+        applicationsCount: j.applicationsCount,
+        createdAt: j.createdAt.toISOString(),
+      })),
+    };
   }
 
   // ------------------------------------------------------------------

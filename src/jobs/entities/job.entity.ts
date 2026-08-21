@@ -26,6 +26,7 @@ export enum JobStatus {
   OPEN = 'open',
   CLOSED = 'closed',
   FILLED = 'filled',
+  ADMIN = 'admin',
 }
 
 @Entity('jobs')
@@ -68,6 +69,9 @@ export class Job {
 
   @Column({ type: 'enum', enum: JobStatus, default: JobStatus.OPEN })
   status!: JobStatus;
+
+  @Column({ type: 'boolean', default: false })
+  featured!: boolean;
 
   @Column({ type: 'int', default: 0 })
   applicationsCount!: number;

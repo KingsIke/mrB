@@ -8,6 +8,7 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -18,8 +19,12 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/guards/admin.guard';
+import { CreateJobDto } from './dto/create-job.dto';
+import { UpdateJobDto } from './dto/update-job.dto';
+import { UpdateJobStatusDto } from './dto/update-job-status.dto';
 import { UpdateGiftDto } from './dto/update-gift.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { UpdateVerificationDto } from './dto/update-verification.dto';
@@ -30,6 +35,7 @@ import {
 import { PastQuestionAnalyticsQueryDto } from './dto/past-question-analytics.dto';
 import { Gift } from '../gifts/entities/gift.entity';
 import { User } from '../users/entities/user.entity';
+import { Job } from '../jobs/entities/job.entity';
 
 @ApiTags('Admin')
 @Controller('admin')
@@ -215,6 +221,113 @@ export class AdminController {
   @ApiResponse({ status: 200, description: 'Bulk hide result' })
   async bulkHideStories(@Body() body: { ids: string[]; isHidden: boolean }) {
     return this.adminService.bulkHideStories(body.ids, body.isHidden);
+  }
+
+  // ------------------------------------------------------------------
+  // Jobs
+  // ------------------------------------------------------------------
+
+  @Post('jobs')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Create a job posting (admin)' })
+  @ApiResponse({ status: 201, description: 'Job created', type: Job })
+  createJob(
+    @CurrentUser('userId') userId: string,
+    @Body() dto: CreateJobDto,
+  ) {
+    return this.adminService.createJob(userId, dto);
+  }
+
+  @Get('jobs')
+  @ApiOperation({ summary: 'List all jobs with filters (admin)' })
+  @ApiResponse({ status: 200, description: 'Paginated job list' })
+  listJobs(
+    @Query('q') q?: string,
+    @Query('type') type?: string,
+    @Query('status') status?: string,
+    @Query('schoolId') schoolId?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.adminService.listJobs({
+      q,
+      type,
+      status,
+      schoolId,
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 20,
+    });
+  }
+
+  @Patch('jobs/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Update a job (admin)' })
+  @ApiResponse({ status: 200, description: 'Job updated', type: Job })
+  updateJob(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateJobDto,
+  ) {
+    return this.adminService.updateJob(id, dto);
+  }
+
+  @Patch('jobs/:id/status')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Update job status (admin)' })
+  @ApiResponse({ status: 200, description: 'Job status updated', type: Job })
+  updateJobStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateJobStatusDto,
+  ) {
+    return this.adminService.updateJobStatus(id, dto);
+  }
+
+  @Delete('jobs/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Delete a job (admin)' })
+  @ApiResponse({ status: 204, description: 'Job deleted' })
+  async deleteJob(@Param('id', ParseUUIDPipe) id: string) {
+    await this.adminService.deleteJob(id);
+  }
+
+  @Get('jobs/:id/applications')
+  @ApiOperation({ summary: 'List all applications for a job (admin)' })
+  @ApiResponse({ status: 200, description: 'Job applications' })
+  getJobApplications(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.getJobApplications(id);
+  }
+
+  @Patch('jobs/applications/:appId/status')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Update any job application status (admin)' })
+  @ApiResponse({ status: 200, description: 'Application status updated' })
+  updateJobApplicationStatus(
+    @Param('appId', ParseUUIDPipe) appId: string,
+    @Body('status') status: string,
+  ) {
+    return this.adminService.updateJobApplicationStatus(appId, status);
+  }
+
+  @Patch('jobs/status')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Bulk update job status (admin)' })
+  @ApiResponse({ status: 200, description: 'Bulk status update result' })
+  async bulkUpdateJobStatus(@Body() body: { ids: string[]; status: string }) {
+    return this.adminService.bulkUpdateJobStatus(body.ids, body.status as any);
+  }
+
+  @Delete('jobs')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Bulk delete jobs (admin)' })
+  @ApiResponse({ status: 200, description: 'Bulk delete result' })
+  async bulkDeleteJobs(@Body() body: { ids: string[] }) {
+    return this.adminService.bulkDeleteJobs(body.ids);
+  }
+
+  @Get('jobs/stats')
+  @ApiOperation({ summary: 'Get job dashboard statistics (admin)' })
+  @ApiResponse({ status: 200, description: 'Job stats and recent postings' })
+  getJobStats() {
+    return this.adminService.getJobStats();
   }
 
   // ------------------------------------------------------------------
