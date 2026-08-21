@@ -17,6 +17,7 @@ import { PostLike } from 'src/posts/entities/post-like.entity';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { UserXp } from 'src/gamification/entities/user-xp.entity';
 import { Level } from 'src/gamification/entities/level.entity';
+import { UsersGateway } from './users.gateway';
 
 export interface UserProfileStats {
   postsCount: number;
@@ -44,6 +45,7 @@ export class UsersService {
     private readonly userXpRepository: Repository<UserXp>,
     @InjectRepository(Level)
     private readonly levelRepository: Repository<Level>,
+    private readonly usersGateway: UsersGateway,
   ) {}
 
   async create(data: Partial<User>): Promise<User> {
@@ -427,10 +429,22 @@ export class UsersService {
       profilePictureUrl = uploadResult.secure_url;
     }
 
-    return this.update(userId, {
+    const updatedUser = await this.update(userId, {
       ...dto,
       dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
       profilePictureUrl,
     });
+
+    // Broadcast the profile change to all connected clients in real-time
+    this.usersGateway.broadcastProfileUpdate({
+      userId: updatedUser.id,
+      profileFrame: updatedUser.profileFrame ?? null,
+      profilePictureUrl: updatedUser.profilePictureUrl ?? null,
+      username: updatedUser.username ?? null,
+      firstName: updatedUser.firstName ?? null,
+      lastName: updatedUser.lastName ?? null,
+    });
+
+    return updatedUser;
   }
 }

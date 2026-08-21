@@ -2,6 +2,7 @@ import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
+import { UsersGateway } from './users.gateway';
 import { User } from './entities/user.entity';
 import { Post } from 'src/posts/entities/post.entity';
 import { Follow } from 'src/follows/entities/follow.entity';
@@ -17,7 +18,7 @@ import { GamificationModule } from '../gamification/gamification.module';
     forwardRef(() => GamificationModule),
   ],
   controllers: [UsersController],
-  providers: [UsersService],
-  exports: [UsersService],
+  providers: [UsersService, UsersGateway],
+  exports: [UsersService, UsersGateway],
 })
 export class UsersModule {}

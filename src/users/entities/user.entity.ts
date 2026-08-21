@@ -14,8 +14,8 @@ import {
 import { School } from '../../schools/entities/school.entity';
 import { Faculty } from '../../faculties/entities/faculty.entity';
 import { Department } from '../../departments/entities/department.entity';
-import { Note } from 'src/notes/entities/note.entity';
-import { PastQuestion } from 'src/past-questions/entities/past-question.entity';
+import { Note } from '../../notes/entities/note.entity';
+import { PastQuestion } from '../../past-questions/entities/past-question.entity';
 
 export enum UserGender {
   MALE = 'male',
@@ -60,6 +60,7 @@ export class User {
   @Column({ type: 'timestamptz', nullable: true })
   deactivatedAt: Date | null;
 
+  @Index()
   @Column({ type: 'timestamptz', nullable: true })
   deletedAt: Date | null;
 
@@ -95,6 +96,7 @@ export class User {
   @JoinColumn({ name: 'schoolId' })
   school: School;
 
+  @Index()
   @Column({ type: 'uuid', nullable: true })
   schoolId: string;
 
@@ -132,6 +134,7 @@ export class User {
   termsAcceptedAt: Date;
 
   // === Status ===
+  @Index()
   @Column({ type: 'enum', enum: UserStatus, default: UserStatus.PENDING_VERIFICATION })
   status: UserStatus;
 
@@ -141,6 +144,7 @@ export class User {
   @Column({ type: 'enum', enum: OnboardingStep, default: OnboardingStep.NONE })
   onboardingStep: OnboardingStep;
 
+  @Index()
   @Column({ type: 'boolean', default: false })
   isOnboardingComplete: boolean;
 
@@ -150,6 +154,7 @@ bubbleColor: string;
 @Column({ nullable: true, default: 'default' })
 bubbleStyle: string;
 
+@Index()
 @Column({ type: 'varchar', length: 50, nullable: true })
 profileFrame: string | null;
 
@@ -163,6 +168,7 @@ profileFrame: string | null;
   @Column({ type: 'boolean', default: true })
   readReceipts: boolean;
 
+  @Index()
   @Column({ type: 'boolean', default: true })
   activityStatus: boolean;
 
