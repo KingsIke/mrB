@@ -15,6 +15,7 @@ import { StoriesService } from '../stories/stories.service';
 import { FollowsService } from '../follows/follows.service';
 import { GroupsService } from '../groups/groups.service';
 import { GroupsGateway } from '../groups/groups.gateway';
+import { PostsGateway } from '../posts/posts.gateway';
 import { CreateGiftDto } from './dto/create-gift.dto';
 import { GroupMember } from '../groups/entities/group-member.entity';
 import { User } from '../users/entities/user.entity';
@@ -37,6 +38,7 @@ export class GiftsService {
     private readonly followsService: FollowsService,
     private readonly groupsService: GroupsService,
     private readonly groupsGateway: GroupsGateway,
+    private readonly postsGateway: PostsGateway,
     @InjectRepository(GroupMember)
     private readonly groupMemberRepository: Repository<GroupMember>,
     @InjectRepository(User)
@@ -240,36 +242,68 @@ export class GiftsService {
       recipientId,
       senderId,
       NotificationType.GIFT_RECEIVED,
-      dto.targetType === GiftTargetType.POST ? NotificationTargetType.POST : NotificationTargetType.STORY,
+      dto.targetType === GiftTargetType.POST ? NotificationTargetType.POST : dto.targetType === GiftTargetType.DM ? NotificationTargetType.POST : NotificationTargetType.STORY,
       dto.targetId,
+      undefined, // actorName — resolved inside notify()
+      undefined, // extra
+      {
+        giftId: gift.id,
+        giftName: gift.name,
+        giftIcon: '🎁',
+        giftVideoUrl: gift.videoUrl || '',
+        giftAnimationUrl: gift.animationUrl || '',
+        senderId,
+        groupId: dto.targetType === GiftTargetType.GROUP || dto.targetType === GiftTargetType.DM ? dto.targetId : undefined,
+      },
     );
 
-    // Broadcast gift:sent to the group room so all online members see it
-    // in real-time (for GROUP and DM target types)
-    if (dto.targetType === GiftTargetType.GROUP || dto.targetType === GiftTargetType.DM) {
+    // Build the broadcast payload (shared across all target types)
+    const buildBroadcastPayload = (senderUser: any) => ({
+      senderId,
+      senderName: senderUser?.username || 'Someone',
+      gift: {
+        id: gift.id,
+        name: gift.name,
+        icon: '🎁',
+        coinCost: gift.coinCost,
+        rarity: gift.coinCost >= 1000 ? 'legendary' : gift.coinCost >= 100 ? 'epic' : 'rare',
+        animationUrl: gift.animationUrl,
+        videoUrl: gift.videoUrl,
+      },
+      recipientId,
+      comboCount: dto.comboCount ?? 1,
+    });
+
+    // Broadcast gift:sent to the appropriate room in real-time.
+    // Fire-and-forget via setImmediate so the HTTP response isn't delayed
+    // by the user lookup or WebSocket emit, which could otherwise cause
+    // client-side ping timeouts when the event loop is busy.
+    setImmediate(async () => {
       try {
         const senderUser = await this.userRepository.findOne({
           where: { id: senderId },
           select: ['id', 'username', 'profilePictureUrl'],
         });
-        this.groupsGateway.broadcastToGroup(dto.targetId, 'gift:sent' as any, {
-          senderId,
-          senderName: senderUser?.username || 'Someone',
-          gift: {
-            id: gift.id,
-            name: gift.name,
-            icon: '🎁',
-            coinCost: gift.coinCost,
-            rarity: gift.coinCost >= 1000 ? 'legendary' : gift.coinCost >= 100 ? 'epic' : 'rare',
-            animationUrl: gift.animationUrl,
-            videoUrl: gift.videoUrl,
-          },
-          recipientId,
-        });
+        const payload = buildBroadcastPayload(senderUser);
+
+        if (dto.targetType === GiftTargetType.POST) {
+          this.postsGateway.broadcastToPostRoom(dto.targetId, 'gift:sent' as any, payload);
+        } else if (
+          dto.targetType === GiftTargetType.GROUP ||
+          dto.targetType === GiftTargetType.DM
+        ) {
+          // Broadcast gift:sent to ALL online members in the room (overlay animation)
+          this.groupsGateway.broadcastToGroup(dto.targetId, 'gift:sent' as any, payload);
+
+          // Also send gift_received ONLY to the recipient so the client can
+          // distinguish sender vs receiver (e.g. to show the received-gift
+          // indicator, update coin balance, etc.).
+          this.groupsGateway.sendToUser(recipientId, 'gift_received' as any, payload);
+        }
       } catch (err) {
         // Non-critical: don't fail the transaction if broadcast fails
       }
-    }
+    });
 
     return transaction;
   }

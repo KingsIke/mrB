@@ -11,6 +11,7 @@ import { EditMessageDto } from './dto/edit-message.dto';
 import { AddReactionDto } from './dto/add-reaction.dto';
 import { CloudinaryService, CloudinaryResourceType } from '../cloudinary/cloudinary.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { User } from '../users/entities/user.entity';
 import { NotificationTargetType, NotificationType } from '../notifications/entities/notification.entity';
 import { resolveAttachmentType } from '../common/multer/message-attachment-upload.config';
 import { CursorPaginated, CursorPaginationDto, decodeCursor, encodeCursor } from '../common/pagination/cursor-pagination.dto';
@@ -34,6 +35,8 @@ export class MessagesService {
     private readonly notificationsService: NotificationsService,
     private readonly groupsService: GroupsService,
     private readonly groupsGateway: GroupsGateway,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
   ) {}
 
 private async getMessageOrThrow(messageId: string, currentUserId?: string): Promise<GroupMessage> {
@@ -156,6 +159,26 @@ private async getMessageOrThrow(messageId: string, currentUserId?: string): Prom
     // Determine if this is a DM so the push payload carries `isDM: true`
     const isDM = group.type === GroupType.DIRECT;
 
+    // For DMs, fetch the sender's profile so the client can display it in the
+    // chat header without an extra API call when opening from a push notification.
+    let senderProfile: Record<string, unknown> | undefined;
+    if (isDM) {
+      const sender = await this.userRepository.findOne({
+        where: { id: userId },
+        select: ['id', 'username', 'firstName', 'lastName', 'profilePictureUrl', 'profileFrame'],
+      });
+      if (sender) {
+        senderProfile = {
+          id: sender.id,
+          username: sender.username,
+          firstName: sender.firstName,
+          lastName: sender.lastName,
+          profilePictureUrl: sender.profilePictureUrl,
+          profileFrame: sender.profileFrame,
+        };
+      }
+    }
+
     const members = await this.groupMemberRepository.find({ where: { groupId } });
     for (const member of members) {
       if (member.isMuted) continue;
@@ -167,7 +190,7 @@ private async getMessageOrThrow(messageId: string, currentUserId?: string): Prom
         groupId,
         undefined,
         undefined,
-        isDM ? { isDM: true, chatId: groupId } : undefined,
+        isDM ? { isDM: true, chatId: groupId, senderProfile } : undefined,
       );
     }
 

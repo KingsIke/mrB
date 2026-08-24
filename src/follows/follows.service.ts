@@ -275,7 +275,7 @@ export class FollowsService {
   async getBlockedUsers(blockerId: string): Promise<any[]> {
   const blocks = await this.blockRepository
     .createQueryBuilder('block')
-    .leftJoinAndSelect('block.blocked', 'blockedUser') // Join the blocked user entity
+    .leftJoinAndSelect('block.blocked', 'blockedUser') // Join the blocked user e
     .where('block.blockerId = :blockerId', { blockerId })
     .orderBy('block.createdAt', 'DESC')
     .getMany();

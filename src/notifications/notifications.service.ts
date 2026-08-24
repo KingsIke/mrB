@@ -25,11 +25,9 @@ export class NotificationsService {
 
   /**
    * Derive a display name from a User row.
+   * Always use the username for notifications.
    */
   private getActorDisplayName(user: User): string {
-    if (user.firstName && user.lastName) return `${user.firstName} ${user.lastName}`;
-    if (user.firstName) return user.firstName;
-    if (user.lastName) return user.lastName;
     return user.username ?? 'Someone';
   }
 

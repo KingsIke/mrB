@@ -28,6 +28,7 @@ import { PastQuestionsModule } from './past-questions/past-questions.module';
 import { SupportModule } from './support/support.module';
 import { AdminModule } from './admin/admin.module';
 import { JobsModule } from './jobs/jobs.module';
+import { ProjectTopicsModule } from './project-topics/project-topics.module';
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { JobsModule } from './jobs/jobs.module';
     SupportModule,
     AdminModule,
     JobsModule,
+    ProjectTopicsModule,
   ],
 })
 export class AppModule {}

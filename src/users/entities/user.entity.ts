@@ -16,6 +16,7 @@ import { Faculty } from '../../faculties/entities/faculty.entity';
 import { Department } from '../../departments/entities/department.entity';
 import { Note } from '../../notes/entities/note.entity';
 import { PastQuestion } from '../../past-questions/entities/past-question.entity';
+import { ProjectTopic } from '../../project-topics/entities/project-topic.entity';
 
 export enum UserGender {
   MALE = 'male',
@@ -195,6 +196,9 @@ profileFrame: string | null;
 
   @OneToMany(() => PastQuestion, (pq) => pq.uploader)
   pastQuestions: PastQuestion[];
+
+  @OneToMany(() => ProjectTopic, (pt) => pt.author)
+  projectTopics: ProjectTopic[];
 
   // === Timestamps ===
   @CreateDateColumn({ type: 'timestamptz' })

@@ -2,13 +2,16 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Not } from 'typeorm';
 import { User } from '../users/entities/user.entity';
-import { NotificationType } from './entities/notification.entity';
+import { Notification, NotificationType } from './entities/notification.entity';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
-const NOTIFICATION_MESSAGES: Record<NotificationType, { title: string; body: (actorName: string, extra?: string) => string }> = {
+const NOTIFICATION_MESSAGES: Record<
+  NotificationType,
+  { title: string; body: (actorName: string, extra?: string) => string }
+> = {
   [NotificationType.POST_LIKED]: {
     title: 'New Like ❤️',
     body: (actorName) => `${actorName} liked your post`,
@@ -83,7 +86,7 @@ const NOTIFICATION_MESSAGES: Record<NotificationType, { title: string; body: (ac
   },
   [NotificationType.POST_TAGGED]: {
     title: 'You Were Tagged 🏷️',
-    body: (actorName) => actorName + ' tagged you in a post',
+    body: (actorName) => `${actorName} tagged you in a post`,
   },
   [NotificationType.PAST_QUESTION_UPLOADED]: {
     title: 'New Past Question 📝',
@@ -91,25 +94,11 @@ const NOTIFICATION_MESSAGES: Record<NotificationType, { title: string; body: (ac
   },
 };
 
-/**
- * Maps each notification type to a channel key. The key is also used to check
- * per-category muting in a user's notification preferences (see ANDROID_CHANNEL_ID
- * below for the actual Android channel id this maps to):
- *   "default"  – general
- *   "social"   – likes, comments, follows, shares, story reactions
- *   "messages" – group / DM messages
- *   "gifts"    – gift received
- *   "system"   – level ups, purchases, uploads
- */
-// Maps a channel key to the actual Android notification channel id created on the client.
-// "default"/"social"/"system" were bumped to "_v2" ids because the original channels were
-// created without an explicit sound, which Android permanently locks in as silent — the
-// channel key itself (used below for muting preferences) stays the same.
 const ANDROID_CHANNEL_ID: Record<string, string> = {
-  default: 'default_v2',
+  default: 'default_3',
   social: 'social_v2',
-  messages: 'messages',
-  gifts: 'gifts',
+  messages: 'messages_v2',
+  gifts: 'gifts_v2',
   system: 'system_v2',
 };
 
@@ -154,20 +143,37 @@ export class PushNotificationsService {
     private readonly configService: ConfigService,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Notification)
+    private readonly notificationRepository: Repository<Notification>,
   ) {}
 
   /**
    * Save or update a user's Expo push token.
+   * Disassociates this token from any other accounts on the same device.
    */
   async registerToken(userId: string, pushToken: string): Promise<{ success: boolean }> {
     this.logger.log(`[Push] Registering token for user ${userId}: ${pushToken.substring(0, 30)}...`);
+
+    // 1. Clear token from any other user accounts using this same physical device
+    await this.userRepository.update(
+      { pushToken, id: Not(userId) },
+      { pushToken: null },
+    );
+
+    // 2. Assign the token to the current user
     await this.userRepository.update(userId, { pushToken });
-    const user = await this.userRepository.findOne({ where: { id: userId }, select: ['id', 'pushToken', 'notificationPreferences'] });
+
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'pushToken'],
+    });
+
     if (user?.pushToken === pushToken) {
       this.logger.log(`[Push] Token verified in DB for user ${userId}`);
     } else {
       this.logger.warn(`[Push] Token verification FAILED for user ${userId}. DB has: ${user?.pushToken ?? 'null'}`);
     }
+
     return { success: true };
   }
 
@@ -189,8 +195,13 @@ export class PushNotificationsService {
     actorName: string,
     extra?: string,
     data?: Record<string, unknown>,
+    actorId?: string,
   ): Promise<void> {
-    const user = await this.userRepository.findOne({ where: { id: userId }, select: ['id', 'pushToken'] });
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'pushToken', 'notificationPreferences'],
+    });
+
     if (!user?.pushToken) {
       this.logger.warn(`[Push] No push token for user ${userId} — skipping push for ${type}`);
       return;
@@ -215,13 +226,25 @@ export class PushNotificationsService {
       return;
     }
 
+    const payloadData = {
+      type,
+      ...(actorId ? { senderId: actorId } : {}),
+      ...(data ?? {}),
+    };
+
+    // Count unread notifications for the badge count
+    const badgeCount = await this.notificationRepository.count({
+      where: { recipientId: userId, isRead: false },
+    });
+
     const message: ExpoPushMessage = {
       to: user.pushToken,
       title: messageConfig.title,
       body: messageConfig.body(actorName, extra),
       sound: 'default',
+      badge: badgeCount + 1, // +1 because this notification is about to be created
       channelId: ANDROID_CHANNEL_ID[CHANNEL_MAP[type] ?? 'default'],
-      data: data ?? { type },
+      data: payloadData,
     };
 
     await this.sendBatch([message]);
@@ -236,11 +259,12 @@ export class PushNotificationsService {
     actorName: string,
     extra?: string,
     data?: Record<string, unknown>,
+    actorId?: string,
   ): Promise<void> {
     if (!userIds.length) return;
 
     const users = await this.userRepository.find({
-      where: { id: { $in: userIds } as any },
+      where: userIds.map((id) => ({ id })),
       select: ['id', 'pushToken'],
     });
 
@@ -248,6 +272,12 @@ export class PushNotificationsService {
     if (!messageConfig) return;
 
     const channelId = ANDROID_CHANNEL_ID[CHANNEL_MAP[type] ?? 'default'];
+
+    const payloadData = {
+      type,
+      ...(actorId ? { senderId: actorId } : {}),
+      ...(data ?? {}),
+    };
 
     const messages: ExpoPushMessage[] = users
       .filter((u) => u.pushToken)
@@ -257,7 +287,7 @@ export class PushNotificationsService {
         body: messageConfig.body(actorName, extra),
         sound: 'default',
         channelId,
-        data: data ?? { type },
+        data: payloadData,
       }));
 
     const skipped = users.length - messages.length;
@@ -315,7 +345,10 @@ export class PushNotificationsService {
           if (errors.length) {
             this.logger.warn(`Expo push errors: ${JSON.stringify(errors)}`);
             for (const err of errors) {
-              if (err.message?.includes('InvalidCredentials') || err.message?.includes('DeviceNotRegistered')) {
+              if (
+                err.message?.includes('InvalidCredentials') ||
+                err.message?.includes('DeviceNotRegistered')
+              ) {
                 const token = err.to;
                 if (token) {
                   await this.userRepository.update({ pushToken: token }, { pushToken: null });

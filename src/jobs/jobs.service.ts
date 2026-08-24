@@ -140,7 +140,7 @@ export class JobsService {
           NotificationType.POST_COMMENTED, // reuse type — or add JOB_APPLIED later
           undefined,
           jobId,
-          applicant.firstName || applicant.username,
+          applicant.username,
         )
         .catch(() => {});
     }

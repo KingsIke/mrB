@@ -34,6 +34,7 @@ export enum GroupWebSocketEvents {
   ONLINE_LIST = 'user:online_list',
   USER_TYPING = 'user:typing',
   GIFT_SENT = 'gift:sent',
+  GIFT_RECEIVED = 'gift_received',
   MESSAGE_PINNED = 'message:pinned',
   MESSAGE_UNPINNED = 'message:unpinned',
 }
@@ -55,6 +56,9 @@ export class GroupsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // Maps groupId -> Set of online userIds in that group
   private readonly roomOnlineUsers = new Map<string, Set<string>>();
+
+  // Global set of all connected userIds (across all namespaces)
+  private readonly connectedUserIds = new Set<string>();
 
   constructor(
     @InjectRepository(GroupMember)
@@ -98,13 +102,22 @@ export class GroupsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.data.userId = payload.sub;
     client.data.joinedGroups = new Set<string>();
 
+    // Track globally connected users
+    this.connectedUserIds.add(payload.sub);
+
     // Join personal room so the user receives unread count updates across all devices
     client.join(`user_${payload.sub}`);
+
+    // Broadcast online status change to all subscribers
+    this.server.to(`user_${payload.sub}`).emit('user:status_change', {
+      userId: payload.sub,
+      isOnline: true,
+    });
 
     this.logger.log(`Client connected: ${client.id} (user ${payload.sub})`);
   }
 
-  handleDisconnect(client: Socket) {
+  async handleDisconnect(client: Socket) {
     const userId = client.data?.userId;
     const joinedGroups: Set<string> = client.data?.joinedGroups;
 
@@ -112,6 +125,22 @@ export class GroupsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       joinedGroups.forEach((groupId) => {
         this.removeUserFromRoomPresence(groupId, userId, client);
       });
+    }
+
+    // Remove from global tracking and broadcast status change
+    if (userId) {
+      // Check if user has other connected sockets before marking offline
+      const allSockets = await this.server.fetchSockets();
+      const stillConnected = allSockets.some(
+        (s: any) => s.data?.userId === userId && s.id !== client.id,
+      );
+      if (!stillConnected) {
+        this.connectedUserIds.delete(userId);
+        this.server.to(`user_${userId}`).emit('user:status_change', {
+          userId,
+          isOnline: false,
+        });
+      }
     }
 
     this.logger.log(`Client disconnected: ${client.id}`);
@@ -214,6 +243,21 @@ export class GroupsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       userId,
       isTyping: false,
     });
+  }
+
+  // --- ONLINE STATUS CHECK ---
+
+  @SubscribeMessage('checkOnline')
+  handleCheckOnline(
+    @MessageBody() data: { userIds: string[] },
+    @ConnectedSocket() client: Socket,
+  ) {
+    if (!data?.userIds?.length) return;
+    const result: Record<string, boolean> = {};
+    for (const uid of data.userIds) {
+      result[uid] = this.connectedUserIds.has(uid);
+    }
+    return { event: 'onlineStatus', data: result };
   }
 
   // --- HELPER METHODS ---

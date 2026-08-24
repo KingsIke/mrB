@@ -173,9 +173,7 @@ export class PostsService {
     
     // Notify each tagged user
     if (tags.length > 0) {
-      const actorName = user.firstName && user.lastName
-        ? user.firstName + ' ' + user.lastName
-        : user.firstName || user.lastName || user.username || 'Someone';
+      const actorName = user.username ?? 'Someone';
       for (const tag of tags) {
         await this.notificationsService.notify(
           tag.taggedUserId,

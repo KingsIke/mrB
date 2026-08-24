@@ -20,6 +20,7 @@ export enum PostWebSocketEvents {
   COMMENT_DELETED = "comment:deleted",
   POST_RESHARED = "post:reshared",
   POST_DELETED = "post:deleted",
+  GIFT_SENT = "gift:sent",
 }
 
 @Injectable()
@@ -28,6 +29,8 @@ export enum PostWebSocketEvents {
     origin: "*",
   },
   namespace: "/posts",
+  pingTimeout: 30000,
+  pingInterval: 25000,
 })
 export class PostsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
