@@ -479,7 +479,7 @@ const GENERAL_TOPICS: ProjectTopicSeed[] = [
 export const PROJECT_TOPICS_BY_DEPARTMENT: Record<string, ProjectTopicSeed[]> = {
   // Computer Science / IT cluster
   'Computer Science': COMPUTER_SCIENCE,
-  'Information Technology': COMPUTER_SCIENCE,
+'Information Technology': COMPUTER_SCIENCE,
   'Cyber Security': COMPUTER_SCIENCE,
   'Software Engineering': COMPUTER_SCIENCE,
   'Data Science': COMPUTER_SCIENCE,
