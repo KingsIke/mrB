@@ -18,6 +18,7 @@ import { CreateHostelDto } from './dto/create-hostel.dto';
 import { UpdateHostelDto } from './dto/update-hostel.dto';
 import { HostelsService } from './hostels.service';
 import { mediaUploadOptions } from '../common/multer/media-upload.config';
+import { AdminGuard } from '../auth/guards/admin.guard';
 
 @ApiTags('Hostels')
 @Controller('hostels')
@@ -25,6 +26,59 @@ import { mediaUploadOptions } from '../common/multer/media-upload.config';
 @ApiBearerAuth()
 export class HostelsController {
   constructor(private readonly hostelsService: HostelsService) {}
+
+// ── Admin endpoints ─────────────────────────────────────────────
+
+@Get('admin/all')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'List all hostel listings (admin)' })
+async adminListAll() {
+  return this.hostelsService.adminListAll();
+}
+
+@Post('admin')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Create hostel listing (admin)' })
+async adminCreate(
+  @CurrentUser('userId') userId: string,
+  @Body() dto: CreateHostelDto,
+) {
+  return this.hostelsService.adminCreate(userId, dto);
+}
+
+@Patch('admin/:id')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Update hostel listing (admin)' })
+async adminUpdate(
+  @Param('id') id: string,
+  @Body() dto: UpdateHostelDto,
+) {
+  return this.hostelsService.adminUpdate(id, dto);
+}
+
+@Patch('admin/:id/toggle')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Toggle hostel listing availability (admin)' })
+async adminToggle(@Param('id') id: string) {
+  return this.hostelsService.adminToggleStatus(id);
+}
+
+@Delete('admin/:id')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Delete hostel listing (admin)' })
+async adminDelete(@Param('id') id: string) {
+  await this.hostelsService.adminDelete(id);
+  return { success: true };
+}
+
+@Delete('admin')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Bulk delete hostel listings (admin)' })
+async adminBulkDelete(@Body() body: { ids: string[] }) {
+  return this.hostelsService.adminDeleteMany(body.ids);
+}
+
+// ── User endpoints ──────────────────────────────────────────────
 
   @Post()
   @UseInterceptors(AnyFilesInterceptor(mediaUploadOptions))

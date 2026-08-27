@@ -29,6 +29,7 @@ import { UpdateEventDto } from './dto/update-event.dto';
 import { PaginationDto } from './dto/pagination.dto';
 import { RequirePerk } from '../gamification/decorators/require-perk.decorator';
 import { PerkGuard } from '../gamification/guards/perk.guard';
+import { AdminGuard } from '../auth/guards/admin.guard';
 
 @ApiTags('Events')
 @Controller('events')
@@ -36,6 +37,58 @@ import { PerkGuard } from '../gamification/guards/perk.guard';
 @ApiBearerAuth()
 export class EventsController {
   constructor(private readonly eventsService: EventsService) {}
+
+// ── Admin endpoints ─────────────────────────────────────────────
+
+@Get('admin/all')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'List all events (admin)' })
+async adminListAll() {
+  return this.eventsService.adminListAll();
+}
+
+@Post('admin')
+@UseGuards(AdminGuard)
+@UseInterceptors(FileInterceptor('image'))
+@ApiConsumes('multipart/form-data')
+@ApiOperation({ summary: 'Create event (admin)' })
+async adminCreate(
+  @CurrentUser('userId') userId: string,
+  @Body() dto: CreateEventDto,
+  @UploadedFile() file?: Express.Multer.File,
+) {
+  return this.eventsService.adminCreate(userId, dto, file);
+}
+
+@Patch('admin/:id')
+@UseGuards(AdminGuard)
+@UseInterceptors(FileInterceptor('image'))
+@ApiConsumes('multipart/form-data')
+@ApiOperation({ summary: 'Update event (admin)' })
+async adminUpdate(
+  @Param('id') id: string,
+  @Body() dto: UpdateEventDto,
+  @UploadedFile() file?: Express.Multer.File,
+) {
+  return this.eventsService.adminUpdate(id, dto, file);
+}
+
+@Delete('admin/:id')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Delete event (admin)' })
+async adminDelete(@Param('id') id: string) {
+  await this.eventsService.adminDelete(id);
+  return { success: true };
+}
+
+@Delete('admin')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Bulk delete events (admin)' })
+async adminBulkDelete(@Body() body: { ids: string[] }) {
+  return this.eventsService.adminDeleteMany(body.ids);
+}
+
+// ── User endpoints ──────────────────────────────────────────────
 
 @Get()
   @ApiOperation({ summary: 'Get all events for the current user school (Paginated)' })

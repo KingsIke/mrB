@@ -30,6 +30,9 @@ import {
 import { PastQuestion } from '../past-questions/entities/past-question.entity';
 import { Job, JobStatus } from '../jobs/entities/job.entity';
 import { JobApplication, ApplicationStatus } from '../jobs/entities/job-application.entity';
+import { Question, QuestionDifficulty } from '../department-war/entities/question.entity';
+import { Battle, BattleStatus } from '../department-war/entities/battle.entity';
+import { DeptWarStats } from '../department-war/entities/dept-war-stats.entity';
 import { PastQuestionAnalyticsQueryDto } from './dto/past-question-analytics.dto';
 import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
@@ -127,6 +130,12 @@ export class AdminService {
     private readonly jobRepository: Repository<Job>,
     @InjectRepository(JobApplication)
     private readonly jobApplicationRepository: Repository<JobApplication>,
+    @InjectRepository(Question)
+    private readonly questionRepository: Repository<Question>,
+    @InjectRepository(Battle)
+    private readonly battleRepository: Repository<Battle>,
+    @InjectRepository(DeptWarStats)
+    private readonly deptWarStatsRepository: Repository<DeptWarStats>,
   ) {}
 
   // ------------------------------------------------------------------
@@ -1006,5 +1015,161 @@ export class AdminService {
       email: user.email,
       profilePictureUrl: user.profilePictureUrl,
     };
+  }
+
+  // ------------------------------------------------------------------
+  // War Questions
+  // ------------------------------------------------------------------
+
+  async getWarQuestions() {
+    return this.questionRepository.find({ order: { createdAt: 'DESC' } });
+  }
+
+  async getWarQuestionStats() {
+    const [total, active, inactive, byDifficulty] = await Promise.all([
+      this.questionRepository.count(),
+      this.questionRepository.count({ where: { isActive: true } }),
+      this.questionRepository.count({ where: { isActive: false } }),
+      this.questionRepository
+        .createQueryBuilder('q')
+        .select('q.difficulty', 'difficulty')
+        .addSelect('COUNT(*)', 'count')
+        .groupBy('q.difficulty')
+        .getRawMany(),
+    ]);
+    const totalBattles = await this.battleRepository.count();
+    const activeBattles = await this.battleRepository.count({ where: { status: BattleStatus.ACTIVE as any } });
+    return { totalQuestions: total, activeQuestions: active, inactiveQuestions: inactive, byDifficulty, totalBattles, activeBattles };
+  }
+
+  async createWarQuestion(data: { questionText: string; options: string[]; correctIndex: number; difficulty?: string; category?: string; departmentId?: string }) {
+    const q = this.questionRepository.create({
+      questionText: data.questionText,
+      options: data.options,
+      correctIndex: data.correctIndex,
+      difficulty: (data.difficulty as QuestionDifficulty) || QuestionDifficulty.MEDIUM,
+      category: data.category || 'general',
+      departmentId: data.departmentId || null,
+      isActive: true,
+    });
+    return this.questionRepository.save(q);
+  }
+
+  async updateWarQuestion(id: string, data: { questionText?: string; options?: string[]; correctIndex?: number; difficulty?: string; category?: string; departmentId?: string | null; isActive?: boolean }) {
+    const q = await this.questionRepository.findOne({ where: { id } });
+    if (!q) throw new NotFoundException('Question not found');
+    if (data.questionText !== undefined) q.questionText = data.questionText;
+    if (data.options !== undefined) q.options = data.options;
+    if (data.correctIndex !== undefined) q.correctIndex = data.correctIndex;
+    if (data.difficulty !== undefined) q.difficulty = data.difficulty as QuestionDifficulty;
+    if (data.category !== undefined) q.category = data.category;
+    if (data.departmentId !== undefined) q.departmentId = data.departmentId;
+    if (data.isActive !== undefined) q.isActive = data.isActive;
+    return this.questionRepository.save(q);
+  }
+
+  async deleteWarQuestion(id: string) {
+    const q = await this.questionRepository.findOne({ where: { id } });
+    if (!q) throw new NotFoundException('Question not found');
+    await this.questionRepository.remove(q);
+    return { deleted: true };
+  }
+
+  async seedWarQuestions() {
+    const count = await this.questionRepository.count();
+    if (count > 0) return { message: 'Questions already seeded', count };
+
+    const seedQuestions: Array<{ questionText: string; options: string[]; correctIndex: number; difficulty: QuestionDifficulty; category: string }> = [
+      { questionText: 'What is the capital of Nigeria?', options: ['Lagos', 'Abuja', 'Kano', 'Port Harcourt'], correctIndex: 1, difficulty: QuestionDifficulty.EASY, category: 'general' },
+      { questionText: 'Which planet is known as the Red Planet?', options: ['Venus', 'Jupiter', 'Mars', 'Saturn'], correctIndex: 2, difficulty: QuestionDifficulty.EASY, category: 'general' },
+      { questionText: 'What is 15 × 13?', options: ['195', '185', '205', '175'], correctIndex: 0, difficulty: QuestionDifficulty.MEDIUM, category: 'math' },
+      { questionText: 'Who wrote the Nigerian national anthem?', options: ['Ayo Bankole', 'Benjamin Odiase', 'John A. Ilechukwu', 'Lillian Jean Williams'], correctIndex: 2, difficulty: QuestionDifficulty.MEDIUM, category: 'general' },
+      { questionText: 'What is the chemical symbol for Gold?', options: ['Go', 'Gd', 'Au', 'Ag'], correctIndex: 2, difficulty: QuestionDifficulty.EASY, category: 'science' },
+      { questionText: 'In what year did Nigeria gain independence?', options: ['1957', '1960', '1963', '1970'], correctIndex: 1, difficulty: QuestionDifficulty.EASY, category: 'history' },
+      { questionText: 'What is the largest ocean on Earth?', options: ['Atlantic', 'Indian', 'Arctic', 'Pacific'], correctIndex: 3, difficulty: QuestionDifficulty.EASY, category: 'science' },
+      { questionText: 'What is the square root of 144?', options: ['11', '13', '12', '14'], correctIndex: 2, difficulty: QuestionDifficulty.EASY, category: 'math' },
+      { questionText: 'Which programming language is known as the backbone of web browsers?', options: ['Python', 'Java', 'JavaScript', 'C++'], correctIndex: 2, difficulty: QuestionDifficulty.EASY, category: 'tech' },
+      { questionText: 'What does CPU stand for?', options: ['Central Process Unit', 'Central Processing Unit', 'Computer Personal Unit', 'Central Program Utility'], correctIndex: 1, difficulty: QuestionDifficulty.EASY, category: 'tech' },
+      { questionText: 'What is the speed of light in km/s (approximately)?', options: ['150,000', '300,000', '450,000', '600,000'], correctIndex: 1, difficulty: QuestionDifficulty.MEDIUM, category: 'science' },
+      { questionText: 'Who is the current Secretary-General of the United Nations?', options: ['Ban Ki-moon', 'António Guterres', 'Kofi Annan', 'Boutros Boutros-Ghali'], correctIndex: 1, difficulty: QuestionDifficulty.MEDIUM, category: 'general' },
+      { questionText: 'What is the derivative of x²?', options: ['x', '2x', 'x²', '2x²'], correctIndex: 1, difficulty: QuestionDifficulty.MEDIUM, category: 'math' },
+      { questionText: 'Which gas makes up about 78% of Earth atmosphere?', options: ['Oxygen', 'Carbon Dioxide', 'Nitrogen', 'Argon'], correctIndex: 2, difficulty: QuestionDifficulty.MEDIUM, category: 'science' },
+      { questionText: 'What does HTML stand for?', options: ['Hyper Text Markup Language', 'High Tech Modern Language', 'Home Tool Markup Language', 'Hyper Transfer Markup Language'], correctIndex: 0, difficulty: QuestionDifficulty.EASY, category: 'tech' },
+      { questionText: 'What is the capital of Kenya?', options: ['Nairobi', 'Mombasa', 'Kampala', 'Dar es Salaam'], correctIndex: 0, difficulty: QuestionDifficulty.EASY, category: 'general' },
+      { questionText: 'Which blood type is known as the universal donor?', options: ['A+', 'B+', 'O-', 'AB+'], correctIndex: 2, difficulty: QuestionDifficulty.MEDIUM, category: 'science' },
+      { questionText: 'What is the value of Pi to two decimal places?', options: ['3.12', '3.14', '3.16', '3.18'], correctIndex: 1, difficulty: QuestionDifficulty.EASY, category: 'math' },
+      { questionText: 'Which African country has the largest population?', options: ['Ethiopia', 'Egypt', 'Nigeria', 'South Africa'], correctIndex: 2, difficulty: QuestionDifficulty.EASY, category: 'general' },
+      { questionText: 'What year was the first iPhone released?', options: ['2005', '2006', '2007', '2008'], correctIndex: 2, difficulty: QuestionDifficulty.MEDIUM, category: 'tech' },
+      { questionText: 'What is the SI unit of force?', options: ['Joule', 'Newton', 'Watt', 'Pascal'], correctIndex: 1, difficulty: QuestionDifficulty.MEDIUM, category: 'science' },
+      { questionText: 'Which planet has the most moons?', options: ['Jupiter', 'Saturn', 'Uranus', 'Neptune'], correctIndex: 1, difficulty: QuestionDifficulty.HARD, category: 'science' },
+      { questionText: 'What is the time complexity of binary search?', options: ['O(n)', 'O(log n)', 'O(n²)', 'O(1)'], correctIndex: 1, difficulty: QuestionDifficulty.MEDIUM, category: 'tech' },
+      { questionText: 'Who painted the Mona Lisa?', options: ['Michelangelo', 'Raphael', 'Leonardo da Vinci', 'Donatello'], correctIndex: 2, difficulty: QuestionDifficulty.EASY, category: 'general' },
+      { questionText: 'What is the chemical formula for table salt?', options: ['KCl', 'NaCl', 'CaCl₂', 'MgCl₂'], correctIndex: 1, difficulty: QuestionDifficulty.MEDIUM, category: 'science' },
+      { questionText: 'Which data structure uses FIFO ordering?', options: ['Stack', 'Queue', 'Tree', 'Graph'], correctIndex: 1, difficulty: QuestionDifficulty.MEDIUM, category: 'tech' },
+      { questionText: 'What is the largest desert in the world?', options: ['Sahara', 'Arabian', 'Gobi', 'Antarctic'], correctIndex: 3, difficulty: QuestionDifficulty.HARD, category: 'general' },
+      { questionText: 'How many chromosomes do humans have?', options: ['44', '46', '48', '42'], correctIndex: 1, difficulty: QuestionDifficulty.MEDIUM, category: 'science' },
+      { questionText: 'What does RAM stand for?', options: ['Random Access Memory', 'Read Access Memory', 'Rapid Access Module', 'Random Action Memory'], correctIndex: 0, difficulty: QuestionDifficulty.EASY, category: 'tech' },
+      { questionText: 'What is 2 raised to the power of 10?', options: ['512', '1024', '2048', '256'], correctIndex: 1, difficulty: QuestionDifficulty.EASY, category: 'math' },
+    ];
+
+    const questions = seedQuestions.map((data) => this.questionRepository.create(data));
+    await this.questionRepository.save(questions);
+    return { message: 'Questions seeded successfully', count: questions.length };
+  }
+
+  async resetAllBattles() {
+    const result = await this.battleRepository
+      .createQueryBuilder()
+      .update(Battle)
+      .set({ status: BattleStatus.CANCELLED as any })
+      .where('status IN (:...statuses)', { statuses: ['waiting', 'countdown', 'active', 'pending'] })
+      .execute();
+    return { message: 'All ongoing battles cancelled', affected: result.affected };
+  }
+
+  async getWarBattles() {
+    return this.battleRepository.find({
+      order: { createdAt: 'DESC' },
+      relations: ['player1', 'player2', 'winner'],
+    });
+  }
+
+  async getWarBattleStats() {
+    const [total, byStatus] = await Promise.all([
+      this.battleRepository.count(),
+      this.battleRepository
+        .createQueryBuilder('b')
+        .select('b.status', 'status')
+        .addSelect('COUNT(*)', 'count')
+        .groupBy('b.status')
+        .getRawMany(),
+    ]);
+    return { totalBattles: total, byStatus };
+  }
+
+  async cancelBattle(id: string) {
+    const battle = await this.battleRepository.findOne({ where: { id } });
+    if (!battle) throw new NotFoundException('Battle not found');
+    if (['completed', 'cancelled', 'expired'].includes(battle.status)) {
+      throw new BadRequestException(`Battle is already ${battle.status}`);
+    }
+    battle.status = BattleStatus.CANCELLED as any;
+    battle.finishedAt = new Date();
+    await this.battleRepository.save(battle);
+    return { cancelled: true, battleId: battle.id };
+  }
+
+  async cancelBattles(ids: string[]) {
+    const cancelled: string[] = [];
+    const errors: string[] = [];
+    for (const id of ids) {
+      try {
+        await this.cancelBattle(id);
+        cancelled.push(id);
+      } catch {
+        errors.push(id);
+      }
+    }
+    return { cancelled, errors };
   }
 }

@@ -10,6 +10,7 @@ import { LockGroupDto } from './dto/lock-group.dto';
 import { MuteGroupDto } from './dto/mute-group.dto';
 import { AddMemberDto } from './dto/add-member.dto';
 import { mediaUploadOptions } from '../common/multer/media-upload.config';
+import { AdminGuard } from '../auth/guards/admin.guard';
 
 @ApiTags('Groups')
 @Controller('groups')
@@ -17,6 +18,58 @@ import { mediaUploadOptions } from '../common/multer/media-upload.config';
 @ApiBearerAuth()
 export class GroupsController {
   constructor(private readonly groupsService: GroupsService) {}
+
+// ── Admin endpoints ─────────────────────────────────────────────
+
+@Get('admin/all')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'List all groups (admin)' })
+async adminListAll() {
+  return this.groupsService.adminListAll();
+}
+
+@Post('admin')
+@UseGuards(AdminGuard)
+@UseInterceptors(FileInterceptor('icon', mediaUploadOptions))
+@ApiConsumes('multipart/form-data')
+@ApiOperation({ summary: 'Create group (admin)' })
+async adminCreate(
+  @CurrentUser('userId') userId: string,
+  @Body() dto: CreateGroupDto,
+  @UploadedFile() icon?: Express.Multer.File,
+) {
+  return this.groupsService.adminCreate(userId, dto, icon);
+}
+
+@Patch('admin/:id')
+@UseGuards(AdminGuard)
+@UseInterceptors(FileInterceptor('icon', mediaUploadOptions))
+@ApiConsumes('multipart/form-data')
+@ApiOperation({ summary: 'Update group (admin)' })
+async adminUpdate(
+  @Param('id') id: string,
+  @Body() dto: UpdateGroupDto,
+  @UploadedFile() icon?: Express.Multer.File,
+) {
+  return this.groupsService.adminUpdate(id, dto, icon);
+}
+
+@Delete('admin/:id')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Delete group (admin)' })
+async adminDelete(@Param('id') id: string) {
+  await this.groupsService.adminDelete(id);
+  return { success: true };
+}
+
+@Delete('admin')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Bulk delete groups (admin)' })
+async adminBulkDelete(@Body() body: { ids: string[] }) {
+  return this.groupsService.adminDeleteMany(body.ids);
+}
+
+// ── User endpoints ──────────────────────────────────────────────
 
   @Post()
   @UseInterceptors(FileInterceptor('icon', mediaUploadOptions))

@@ -21,6 +21,14 @@ export class DepartmentsService {
     return this.departmentRepository.save(department);
   }
 
+  async findAll(): Promise<Department[]> {
+    return this.departmentRepository.find({
+      where: { isActive: true },
+      order: { name: 'ASC' },
+      relations: ['faculty'],
+    });
+  }
+
   async findAllByFaculty(facultyId: string): Promise<Department[]> {
     return this.departmentRepository.find({
       where: { facultyId, isActive: true },

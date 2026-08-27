@@ -202,4 +202,79 @@ export class HostelsService {
 
     return uploadResults.map((result) => result.secure_url);
   }
+
+  // ── Admin methods ──────────────────────────────────────────────
+
+  async adminListAll(): Promise<HostelListing[]> {
+    return this.hostelRepository.find({
+      order: { createdAt: 'DESC' },
+      relations: ['seller'],
+    });
+  }
+
+  async adminCreate(userId: string, dto: CreateHostelDto): Promise<HostelListing> {
+    const listing = this.hostelRepository.create({
+      hostelName: dto.hostelName,
+      description: dto.description,
+      location: dto.location,
+      address: dto.address,
+      city: dto.city,
+      state: dto.state,
+      price: dto.price,
+      monthlyRent: dto.monthlyRent,
+      serviceCharge: dto.serviceCharge,
+      cautionFee: dto.cautionFee,
+      roomType: dto.roomType,
+      gender: dto.gender,
+      capacity: dto.capacity,
+      availableRooms: dto.availableRooms,
+      bedrooms: dto.bedrooms,
+      bathrooms: dto.bathrooms,
+      amenities: dto.amenities,
+      curfew: dto.curfew,
+      visitorsAllowed: dto.visitorsAllowed,
+      petsAllowed: dto.petsAllowed,
+      smokingAllowed: dto.smokingAllowed,
+      lookingForRoommate: dto.lookingForRoommate,
+      contactName: dto.contactName,
+      contactPhone: dto.contactPhone,
+      whatsapp: dto.whatsapp,
+      contactEmail: dto.contactEmail,
+      sellerId: userId,
+      schoolId: (dto as any).schoolId || undefined,
+    });
+    return this.hostelRepository.save(listing);
+  }
+
+  async adminUpdate(id: string, dto: UpdateHostelDto): Promise<HostelListing> {
+    const listing = await this.findOne(id);
+    Object.assign(listing, dto);
+    return this.hostelRepository.save(listing);
+  }
+
+  async adminToggleStatus(id: string): Promise<HostelListing> {
+    const listing = await this.findOne(id);
+    listing.isAvailable = !listing.isAvailable;
+    listing.status = listing.isAvailable ? HostelStatus.AVAILABLE : HostelStatus.UNAVAILABLE;
+    return this.hostelRepository.save(listing);
+  }
+
+  async adminDelete(id: string): Promise<void> {
+    const listing = await this.findOne(id);
+    await this.hostelRepository.remove(listing);
+  }
+
+  async adminDeleteMany(ids: string[]): Promise<{ deleted: string[]; errors: string[] }> {
+    const deleted: string[] = [];
+    const errors: string[] = [];
+    for (const id of ids) {
+      try {
+        await this.adminDelete(id);
+        deleted.push(id);
+      } catch {
+        errors.push(id);
+      }
+    }
+    return { deleted, errors };
+  }
 }

@@ -8,13 +8,14 @@ import { Post } from 'src/posts/entities/post.entity';
 import { Follow } from 'src/follows/entities/follow.entity';
 import { PostLike } from 'src/posts/entities/post-like.entity';
 import { GiftTransaction } from 'src/gifts/entities/gift-transaction.entity';
+import { UserSearchHistory } from './entities/user-search-history.entity';
 import { UserXp } from 'src/gamification/entities/user-xp.entity';
 import { Level } from 'src/gamification/entities/level.entity';
 import { GamificationModule } from '../gamification/gamification.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Post, Follow, PostLike, GiftTransaction, UserXp, Level]),
+    TypeOrmModule.forFeature([User, Post, Follow, PostLike, GiftTransaction, UserSearchHistory, UserXp, Level]),
     forwardRef(() => GamificationModule),
   ],
   controllers: [UsersController],

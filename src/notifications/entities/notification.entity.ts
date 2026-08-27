@@ -22,6 +22,13 @@ export enum NotificationType {
   EVENT_CREATED = 'event_created',
   POST_TAGGED = 'post_tagged',
   PAST_QUESTION_UPLOADED = 'past_question_uploaded',
+  WAR_CHALLENGED = 'war_challenged',
+  WAR_BATTLE_WON = 'war_battle_won',
+  WAR_BATTLE_LOST = 'war_battle_lost',
+  WAR_BATTLE_DRAW = 'war_battle_draw',
+  WAR_SCHEDULED_REMINDER = 'war_scheduled_reminder',
+  TREASURE_HUNT_CREATED = 'treasure_hunt_created',
+  TREASURE_HUNT_REMINDER = 'treasure_hunt_reminder',
 }
 
 export enum NotificationTargetType {
@@ -34,6 +41,7 @@ export enum NotificationTargetType {
   MARKETPLACE_ITEM = 'marketplace_item',
   EVENT = 'event',
   USER = 'user',
+  WAR = 'war',
 }
 
 @Entity('notifications')

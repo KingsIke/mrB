@@ -314,4 +314,52 @@ export class PastQuestionsService {
     }
     return { url: files[0].uri };
   }
+
+  // ── Admin methods ──────────────────────────────────────────────
+
+  async adminListAll(): Promise<PastQuestion[]> {
+    return this.pqRepo.find({
+      order: { createdAt: 'DESC' },
+      relations: ['uploader'],
+    });
+  }
+
+  async adminCreate(userId: string, dto: CreatePastQuestionDto): Promise<PastQuestion> {
+    const pq = this.pqRepo.create({
+      course: dto.course,
+      level: dto.level,
+      session: dto.session,
+      semester: dto.semester,
+      priceCoins: dto.priceCoins,
+      uploaderId: userId,
+    });
+    return this.pqRepo.save(pq);
+  }
+
+  async adminUpdate(id: string, dto: Partial<CreatePastQuestionDto>): Promise<PastQuestion> {
+    const pq = await this.pqRepo.findOne({ where: { id } });
+    if (!pq) throw new NotFoundException('Past question not found');
+    Object.assign(pq, dto);
+    return this.pqRepo.save(pq);
+  }
+
+  async adminDelete(id: string): Promise<void> {
+    const pq = await this.pqRepo.findOne({ where: { id } });
+    if (!pq) throw new NotFoundException('Past question not found');
+    await this.pqRepo.remove(pq);
+  }
+
+  async adminDeleteMany(ids: string[]): Promise<{ deleted: string[]; errors: string[] }> {
+    const deleted: string[] = [];
+    const errors: string[] = [];
+    for (const id of ids) {
+      try {
+        await this.adminDelete(id);
+        deleted.push(id);
+      } catch {
+        errors.push(id);
+      }
+    }
+    return { deleted, errors };
+  }
 }

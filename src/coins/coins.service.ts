@@ -63,6 +63,7 @@ export class CoinsService {
     amount: number,
     type: CoinTransactionType,
     referenceId?: string,
+    txType?: CoinTransactionType,
   ): Promise<CoinBalance> {
     const balance = await this.getOrCreateBalance(userId);
     balance.balance = Number(balance.balance) + amount;
@@ -71,7 +72,7 @@ export class CoinsService {
       this.coinTransactionRepository.create({
         userId,
         amount,
-        type,
+        type: txType ?? type,
         referenceId: referenceId ?? null,
         balanceAfter: balance.balance,
       }),
@@ -108,6 +109,7 @@ export class CoinsService {
     userId: string,
     amountNgn: number,
     referenceId?: string,
+    txType?: CoinTransactionType,
   ): Promise<CoinBalance> {
     const balance = await this.getOrCreateBalance(userId);
     balance.earnedBalance = Number(balance.earnedBalance) + amountNgn;
@@ -117,7 +119,7 @@ export class CoinsService {
       this.coinTransactionRepository.create({
         userId,
         amount: amountNgn,
-        type: CoinTransactionType.GIFT_RECEIVED,
+        type: txType ?? CoinTransactionType.GIFT_RECEIVED,
         referenceId: referenceId ?? null,
         balanceAfter: balance.earnedBalance,
       }),

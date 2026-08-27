@@ -296,6 +296,10 @@ async getGiverLeaderboard(
       .addOrderBy('userXp.totalXp', 'DESC')
       // Users with activity status off opt out of the public leaderboard
       .andWhere('user.activityStatus = :activityStatus', { activityStatus: true })
+      // Exclude users who haven't completed onboarding (no school/faculty/department)
+      .andWhere('user.schoolId IS NOT NULL')
+      .andWhere('user.facultyId IS NOT NULL')
+      .andWhere('user.departmentId IS NOT NULL')
       .take(limit);
 
     switch (scope) {

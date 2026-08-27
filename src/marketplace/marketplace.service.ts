@@ -271,4 +271,61 @@ async findAll(options?: {
 
     return uploadResults.map((result) => result.secure_url);
   }
+
+  // ── Admin methods ──────────────────────────────────────────────
+
+  async adminListAll(): Promise<MarketplaceItem[]> {
+    return this.marketplaceRepository.find({
+      order: { createdAt: 'DESC' },
+      relations: ['seller'],
+    });
+  }
+
+  async adminCreate(userId: string, dto: CreateMarketplaceDto): Promise<MarketplaceItem> {
+    const item = this.marketplaceRepository.create({
+      title: dto.title,
+      description: dto.description,
+      category: dto.category,
+      brand: dto.brand,
+      model: dto.model,
+      condition: dto.condition,
+      location: dto.location,
+      price: dto.price,
+      sellerId: userId,
+      schoolId: (dto as any).schoolId || undefined,
+    });
+    return this.marketplaceRepository.save(item);
+  }
+
+  async adminUpdate(id: string, dto: UpdateMarketplaceDto): Promise<MarketplaceItem> {
+    const item = await this.findOne(id);
+    Object.assign(item, dto);
+    return this.marketplaceRepository.save(item);
+  }
+
+  async adminToggleStatus(id: string): Promise<MarketplaceItem> {
+    const item = await this.findOne(id);
+    item.isAvailable = !item.isAvailable;
+    item.status = item.isAvailable ? MarketplaceStatus.AVAILABLE : MarketplaceStatus.UNAVAILABLE;
+    return this.marketplaceRepository.save(item);
+  }
+
+  async adminDelete(id: string): Promise<void> {
+    const item = await this.findOne(id);
+    await this.marketplaceRepository.remove(item);
+  }
+
+  async adminDeleteMany(ids: string[]): Promise<{ deleted: string[]; errors: string[] }> {
+    const deleted: string[] = [];
+    const errors: string[] = [];
+    for (const id of ids) {
+      try {
+        await this.adminDelete(id);
+        deleted.push(id);
+      } catch {
+        errors.push(id);
+      }
+    }
+    return { deleted, errors };
+  }
 }

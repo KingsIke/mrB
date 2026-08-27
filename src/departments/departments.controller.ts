@@ -4,11 +4,20 @@ import { DepartmentsService } from './departments.service';
 import { DepartmentQueryDto } from './dto/department-query.dto';
 import { Department } from './entities/department.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AdminGuard } from '../auth/guards/admin.guard';
 
 @ApiTags('Departments')
 @Controller('departments')
 export class DepartmentsController {
   constructor(private readonly departmentsService: DepartmentsService) {}
+
+  @Get('admin/all')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List all departments (admin)' })
+  async adminListAll() {
+    return this.departmentsService.findAll();
+  }
 
   @Get()
   @UseGuards(JwtAuthGuard)

@@ -11,6 +11,7 @@ export enum CoinTransactionType {
   DAILY_FREE_GIFT = 'daily_free_gift',
   CONVERT_EARNINGS = 'convert_earnings',
   WITHDRAWAL = 'withdrawal',
+  TREASURE_HUNT_REWARD = 'treasure_hunt_reward',
 }
 
 @Entity('coin_transactions')

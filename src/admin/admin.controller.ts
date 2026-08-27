@@ -365,4 +365,80 @@ export class AdminController {
   getPastQuestionAnalytics(@Query() query: PastQuestionAnalyticsQueryDto) {
     return this.adminService.getPastQuestionAnalytics(query);
   }
+
+  // ------------------------------------------------------------------
+  // War Questions
+  // ------------------------------------------------------------------
+
+  @Get('war-questions')
+  @ApiOperation({ summary: 'List all war questions (admin)' })
+  getWarQuestions() {
+    return this.adminService.getWarQuestions();
+  }
+
+  @Get('war-questions/stats')
+  @ApiOperation({ summary: 'War question and battle stats (admin)' })
+  getWarQuestionStats() {
+    return this.adminService.getWarQuestionStats();
+  }
+
+  @Post('war-questions')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Create a war question (admin)' })
+  createWarQuestion(@Body() body: { questionText: string; options: string[]; correctIndex: number; difficulty?: string; category?: string; departmentId?: string }) {
+    return this.adminService.createWarQuestion(body);
+  }
+
+  @Patch('war-questions/:id')
+  @ApiOperation({ summary: 'Update a war question (admin)' })
+  updateWarQuestion(@Param('id', ParseUUIDPipe) id: string, @Body() body: Record<string, any>) {
+    return this.adminService.updateWarQuestion(id, body);
+  }
+
+  @Delete('war-questions/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Delete a war question (admin)' })
+  deleteWarQuestion(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.deleteWarQuestion(id);
+  }
+
+  @Post('war-questions/seed')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Seed default war questions (admin)' })
+  seedWarQuestions() {
+    return this.adminService.seedWarQuestions();
+  }
+
+  @Post('war/reset')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cancel all ongoing battles (admin)' })
+  resetAllBattles() {
+    return this.adminService.resetAllBattles();
+  }
+
+  @Get('war-battles')
+  @ApiOperation({ summary: 'List all war battles (admin)' })
+  getWarBattles() {
+    return this.adminService.getWarBattles();
+  }
+
+  @Get('war-battles/stats')
+  @ApiOperation({ summary: 'War battle stats (admin)' })
+  getWarBattleStats() {
+    return this.adminService.getWarBattleStats();
+  }
+
+  @Post('war-battles/:id/cancel')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cancel a single battle (admin)' })
+  cancelBattle(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.cancelBattle(id);
+  }
+
+  @Post('war-battles/cancel')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cancel multiple battles (admin)' })
+  cancelBattles(@Body() body: { ids: string[] }) {
+    return this.adminService.cancelBattles(body.ids);
+  }
 }

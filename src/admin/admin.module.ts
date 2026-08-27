@@ -12,6 +12,9 @@ import { CoinTransaction } from '../coins/entities/coin-transaction.entity';
 import { PastQuestion } from '../past-questions/entities/past-question.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { JobApplication } from '../jobs/entities/job-application.entity';
+import { Question } from '../department-war/entities/question.entity';
+import { Battle } from '../department-war/entities/battle.entity';
+import { DeptWarStats } from '../department-war/entities/dept-war-stats.entity';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
@@ -27,6 +30,9 @@ import { AuthModule } from '../auth/auth.module';
       PastQuestion,
       Job,
       JobApplication,
+      Question,
+      Battle,
+      DeptWarStats,
     ]),
     AuthModule,
   ],

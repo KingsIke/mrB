@@ -4,7 +4,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, In, Not, Repository } from 'typeorm';
+import { Brackets, In, IsNull, Not, Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { UserSearchHistory } from './entities/user-search-history.entity';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -15,6 +15,7 @@ import { Post } from 'src/posts/entities/post.entity';
 import { GiftTransaction } from 'src/gifts/entities/gift-transaction.entity';
 import { PostLike } from 'src/posts/entities/post-like.entity';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { UpdatePrivacyDto } from './dto/update-privacy.dto';
 
 export interface UserProfileStats {
   postsCount: number;
@@ -46,6 +47,8 @@ export class UsersService {
     const user = this.userRepository.create(data);
     return this.userRepository.save(user);
   }
+
+  
 
   async findById(id: string): Promise<User | null> {
     return this.userRepository.findOne({
@@ -216,6 +219,11 @@ export class UsersService {
 
   async getTrendingUsers(currentUserId?: string, limit = 10) {
     const users = await this.userRepository.find({
+      where: {
+        schoolId: Not(IsNull()),
+        facultyId: Not(IsNull()),
+        departmentId: Not(IsNull()),
+      },
       relations: ['school', 'faculty', 'department'],
       take: limit,
       order: { createdAt: 'DESC' },
@@ -262,7 +270,14 @@ export class UsersService {
   }
 
   async getSuggestedUsers(currentUserId?: string, limit = 10) {
-    const where = currentUserId ? { id: Not(In([currentUserId])) } : {};
+    const where: any = {
+      schoolId: Not(IsNull()),
+      facultyId: Not(IsNull()),
+      departmentId: Not(IsNull()),
+    };
+    if (currentUserId) {
+      where.id = Not(In([currentUserId]));
+    }
     const suggested = await this.userRepository.find({
       where,
       relations: ['school', 'faculty', 'department'],
@@ -432,4 +447,33 @@ export class UsersService {
       profilePictureUrl,
     });
   }
+
+
+
+  /**
+   * Updates user privacy settings
+   */
+  async updatePrivacy(userId: string, dto: UpdatePrivacyDto): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    Object.assign(user, dto);
+    return this.userRepository.save(user);
+  }
+
+  /**
+   * Checks if requesterId is following targetUserId
+   */
+  async isFollowing(requesterId: string, targetUserId: string): Promise<boolean> {
+    const count = await this.followRepository.count({
+      where: {
+        followerId: requesterId,
+        followingId: targetUserId,
+      },
+    });
+    return count > 0;
+  }
+
 }

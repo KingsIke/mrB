@@ -19,6 +19,7 @@ import { CreateMarketplaceDto } from './dto/create-marketplace.dto';
 import { UpdateMarketplaceDto } from './dto/update-marketplace.dto';
 import { MarketplaceService } from './marketplace.service';
 import { mediaUploadOptions } from '../common/multer/media-upload.config';
+import { AdminGuard } from '../auth/guards/admin.guard';
 
 @ApiTags('Marketplace')
 @Controller('marketplace')
@@ -26,6 +27,59 @@ import { mediaUploadOptions } from '../common/multer/media-upload.config';
 @ApiBearerAuth()
 export class MarketplaceController {
   constructor(private readonly marketplaceService: MarketplaceService) {}
+
+// ── Admin endpoints ─────────────────────────────────────────────
+
+@Get('admin/all')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'List all marketplace items (admin)' })
+async adminListAll() {
+  return this.marketplaceService.adminListAll();
+}
+
+@Post('admin')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Create marketplace item (admin)' })
+async adminCreate(
+  @CurrentUser('userId') userId: string,
+  @Body() dto: CreateMarketplaceDto,
+) {
+  return this.marketplaceService.adminCreate(userId, dto);
+}
+
+@Patch('admin/:id')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Update marketplace item (admin)' })
+async adminUpdate(
+  @Param('id') id: string,
+  @Body() dto: UpdateMarketplaceDto,
+) {
+  return this.marketplaceService.adminUpdate(id, dto);
+}
+
+@Patch('admin/:id/toggle')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Toggle marketplace item availability (admin)' })
+async adminToggle(@Param('id') id: string) {
+  return this.marketplaceService.adminToggleStatus(id);
+}
+
+@Delete('admin/:id')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Delete marketplace item (admin)' })
+async adminDelete(@Param('id') id: string) {
+  await this.marketplaceService.adminDelete(id);
+  return { success: true };
+}
+
+@Delete('admin')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Bulk delete marketplace items (admin)' })
+async adminBulkDelete(@Body() body: { ids: string[] }) {
+  return this.marketplaceService.adminDeleteMany(body.ids);
+}
+
+// ── User endpoints ──────────────────────────────────────────────
 
   @Post()
   @UseInterceptors(AnyFilesInterceptor(mediaUploadOptions))

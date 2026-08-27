@@ -29,6 +29,9 @@ import { SupportModule } from './support/support.module';
 import { AdminModule } from './admin/admin.module';
 import { JobsModule } from './jobs/jobs.module';
 import { ProjectTopicsModule } from './project-topics/project-topics.module';
+import { DepartmentWarModule } from './department-war/department-war.module';
+import { TreasureHuntModule } from './treasure-hunt/treasure-hunt.module';
+import { MaterialsModule } from './materials/materials.module';
 
 @Module({
   imports: [
@@ -75,6 +78,9 @@ import { ProjectTopicsModule } from './project-topics/project-topics.module';
     AdminModule,
     JobsModule,
     ProjectTopicsModule,
+    DepartmentWarModule,
+    TreasureHuntModule,
+    MaterialsModule,
   ],
 })
 export class AppModule {}

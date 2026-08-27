@@ -842,4 +842,62 @@ async getDefaultGroups(): Promise<Group[]> {
     membership.isHidden = true;
     await this.groupMemberRepository.save(membership);
   }
+
+  // ── Admin methods ──────────────────────────────────────────────
+
+  async adminListAll(): Promise<Group[]> {
+    return this.groupRepository.find({ order: { createdAt: 'DESC' } });
+  }
+
+  async adminCreate(userId: string, dto: CreateGroupDto, icon?: Express.Multer.File): Promise<Group> {
+    let iconUrl: string | undefined;
+    if (icon) {
+      const result = await this.cloudinaryService.uploadFile(icon, { folder: 'groups' });
+      iconUrl = result.secure_url;
+    }
+    const group = this.groupRepository.create({
+      name: dto.name,
+      description: dto.description,
+      createdById: userId,
+      iconUrl,
+    });
+    const saved = await this.groupRepository.save(group);
+    // Auto-add creator as admin member
+    const membership = this.groupMemberRepository.create({
+      groupId: saved.id,
+      userId,
+      role: GroupMemberRole.ADMIN,
+    });
+    await this.groupMemberRepository.save(membership);
+    return saved;
+  }
+
+  async adminUpdate(id: string, dto: UpdateGroupDto, icon?: Express.Multer.File): Promise<Group> {
+    const group = await this.getGroupOrThrow(id);
+    if (icon) {
+      const result = await this.cloudinaryService.uploadFile(icon, { folder: 'groups' });
+      group.iconUrl = result.secure_url;
+    }
+    Object.assign(group, dto);
+    return this.groupRepository.save(group);
+  }
+
+  async adminDelete(id: string): Promise<void> {
+    const group = await this.getGroupOrThrow(id);
+    await this.groupRepository.remove(group);
+  }
+
+  async adminDeleteMany(ids: string[]): Promise<{ deleted: string[]; errors: string[] }> {
+    const deleted: string[] = [];
+    const errors: string[] = [];
+    for (const id of ids) {
+      try {
+        await this.adminDelete(id);
+        deleted.push(id);
+      } catch {
+        errors.push(id);
+      }
+    }
+    return { deleted, errors };
+  }
 }

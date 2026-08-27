@@ -1,8 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Res,
@@ -19,6 +21,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CreatePastQuestionDto } from './dto/create-past-question.dto';
 import { ListPastQuestionsDto } from './dto/list-past-questions.dto';
 import { messageAttachmentUploadOptions } from '../common/multer/message-attachment-upload.config';
+import { AdminGuard } from '../auth/guards/admin.guard';
 
 @ApiTags('PastQuestions')
 @Controller('past-questions')
@@ -26,6 +29,52 @@ import { messageAttachmentUploadOptions } from '../common/multer/message-attachm
 @ApiBearerAuth()
 export class PastQuestionsController {
   constructor(private readonly pqService: PastQuestionsService) {}
+
+// ── Admin endpoints ─────────────────────────────────────────────
+
+@Get('admin/all')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'List all past questions (admin)' })
+async adminListAll() {
+  return this.pqService.adminListAll();
+}
+
+@Post('admin')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Create past question (admin)' })
+async adminCreate(
+  @CurrentUser('userId') userId: string,
+  @Body() dto: CreatePastQuestionDto,
+) {
+  return this.pqService.adminCreate(userId, dto);
+}
+
+@Patch('admin/:id')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Update past question (admin)' })
+async adminUpdate(
+  @Param('id') id: string,
+  @Body() dto: Partial<CreatePastQuestionDto>,
+) {
+  return this.pqService.adminUpdate(id, dto);
+}
+
+@Delete('admin/:id')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Delete past question (admin)' })
+async adminDelete(@Param('id') id: string) {
+  await this.pqService.adminDelete(id);
+  return { success: true };
+}
+
+@Delete('admin')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Bulk delete past questions (admin)' })
+async adminBulkDelete(@Body() body: { ids: string[] }) {
+  return this.pqService.adminDeleteMany(body.ids);
+}
+
+// ── User endpoints ──────────────────────────────────────────────
 
   @Post()
   @UseInterceptors(FilesInterceptor('files', 10, messageAttachmentUploadOptions))

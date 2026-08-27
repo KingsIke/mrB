@@ -79,6 +79,20 @@ export class NotificationsService {
         return `${actorName} tagged you in a post`;
       case NotificationType.PAST_QUESTION_UPLOADED:
         return `${actorName} uploaded a new past question`;
+      case NotificationType.WAR_CHALLENGED:
+        return `${actorName} challenged you to a quiz battle!`;
+      case NotificationType.WAR_BATTLE_WON:
+        return `You won the battle!`;
+      case NotificationType.WAR_BATTLE_LOST:
+        return `You lost the battle`;
+      case NotificationType.WAR_BATTLE_DRAW:
+        return `The battle ended in a draw!`;
+      case NotificationType.WAR_SCHEDULED_REMINDER:
+        return `Your battle starts soon!`;
+      case NotificationType.TREASURE_HUNT_CREATED:
+        return `A new treasure hunt has appeared!`;
+      case NotificationType.TREASURE_HUNT_REMINDER:
+        return `A treasure hunt is still waiting to be claimed!`;
       default:
         return `${actorName} interacted with your content`;
     }

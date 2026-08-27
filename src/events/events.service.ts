@@ -238,4 +238,60 @@ export class EventsService {
 
     return saved;
   }
+
+  // ── Admin methods ──────────────────────────────────────────────
+
+  async adminListAll(): Promise<Event[]> {
+    return this.eventRepository.find({ order: { createdAt: 'DESC' } });
+  }
+
+  async adminCreate(userId: string, dto: CreateEventDto, uploadedFile?: Express.Multer.File): Promise<Event> {
+    let coverImage: string | undefined = dto.coverImage;
+    if (uploadedFile) {
+      const uploadResult = await this.cloudinaryService.uploadFile(uploadedFile, { folder: 'events' });
+      coverImage = uploadResult.secure_url;
+    }
+    const event = this.eventRepository.create({
+      title: dto.title,
+      description: dto.description,
+      date: dto.date,
+      time: dto.time,
+      location: dto.location,
+      category: dto.category,
+      isFeatured: dto.isFeatured,
+      creatorId: userId,
+      schoolId: (dto as any).schoolId || undefined,
+      coverImage,
+    });
+    return this.eventRepository.save(event);
+  }
+
+  async adminUpdate(id: string, dto: UpdateEventDto, uploadedFile?: Express.Multer.File): Promise<Event> {
+    const event = await this.findOne(id);
+    if (uploadedFile) {
+      const uploadResult = await this.cloudinaryService.uploadFile(uploadedFile, { folder: 'events' });
+      event.coverImage = uploadResult.secure_url;
+    }
+    Object.assign(event, dto);
+    return this.eventRepository.save(event);
+  }
+
+  async adminDelete(id: string): Promise<void> {
+    const event = await this.findOne(id);
+    await this.eventRepository.remove(event);
+  }
+
+  async adminDeleteMany(ids: string[]): Promise<{ deleted: string[]; errors: string[] }> {
+    const deleted: string[] = [];
+    const errors: string[] = [];
+    for (const id of ids) {
+      try {
+        await this.adminDelete(id);
+        deleted.push(id);
+      } catch {
+        errors.push(id);
+      }
+    }
+    return { deleted, errors };
+  }
 }

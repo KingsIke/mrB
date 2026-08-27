@@ -92,6 +92,34 @@ const NOTIFICATION_MESSAGES: Record<
     title: 'New Past Question 📝',
     body: (actorName) => `${actorName} uploaded a new past question`,
   },
+  [NotificationType.WAR_CHALLENGED]: {
+    title: '⚔️ Battle Challenge!',
+    body: (actorName) => `${actorName} challenged you to a quiz battle!`,
+  },
+  [NotificationType.WAR_BATTLE_WON]: {
+    title: '🏆 Victory!',
+    body: (_actorName, extra) => `You won the battle! ${extra ?? ''}`,
+  },
+  [NotificationType.WAR_BATTLE_LOST]: {
+    title: '💔 Defeated',
+    body: (_actorName, extra) => `You lost the battle. ${extra ?? ''}`,
+  },
+  [NotificationType.WAR_BATTLE_DRAW]: {
+    title: '🤝 Draw!',
+    body: () => `The battle ended in a draw!`,
+  },
+  [NotificationType.WAR_SCHEDULED_REMINDER]: {
+    title: '📅 Battle Starting Soon!',
+    body: (actorName, extra) => `Your battle with ${actorName} starts${extra ? ` ${extra}` : ' in 30 minutes'}!`,
+  },
+  [NotificationType.TREASURE_HUNT_CREATED]: {
+    title: '🗺️ Treasure Hunt!',
+    body: (_actorName, extra) => `A new treasure hunt has appeared! ${extra ?? 'Open the app to find it!'}`,
+  },
+  [NotificationType.TREASURE_HUNT_REMINDER]: {
+    title: '🗺️ Treasure Still Available!',
+    body: (_actorName, extra) => `${extra ?? 'A treasure hunt is still waiting to be claimed!'}`,
+  },
 };
 
 const ANDROID_CHANNEL_ID: Record<string, string> = {
@@ -103,6 +131,11 @@ const ANDROID_CHANNEL_ID: Record<string, string> = {
 };
 
 const CHANNEL_MAP: Record<NotificationType, string> = {
+  [NotificationType.WAR_CHALLENGED]: 'default',
+  [NotificationType.WAR_BATTLE_WON]: 'default',
+  [NotificationType.WAR_BATTLE_LOST]: 'default',
+  [NotificationType.WAR_BATTLE_DRAW]: 'default',
+  [NotificationType.WAR_SCHEDULED_REMINDER]: 'default',
   [NotificationType.POST_LIKED]: 'social',
   [NotificationType.POST_COMMENTED]: 'social',
   [NotificationType.POST_RESHARED]: 'social',
@@ -123,6 +156,8 @@ const CHANNEL_MAP: Record<NotificationType, string> = {
   [NotificationType.EVENT_CREATED]: 'social',
   [NotificationType.POST_TAGGED]: 'social',
   [NotificationType.PAST_QUESTION_UPLOADED]: 'system',
+  [NotificationType.TREASURE_HUNT_CREATED]: 'system',
+  [NotificationType.TREASURE_HUNT_REMINDER]: 'system',
 };
 
 interface ExpoPushMessage {
