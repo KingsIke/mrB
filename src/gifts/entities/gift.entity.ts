@@ -8,6 +8,9 @@ export class Gift {
   @Column({ type: 'varchar', length: 100 })
   name: string;
 
+  @Column({ type: 'varchar', length: 50, default: 'common' })
+  rarity: string;
+
   @Column({ type: 'varchar', length: 500, nullable: true })
   animationUrl: string | null;
 

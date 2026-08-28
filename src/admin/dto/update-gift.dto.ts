@@ -41,4 +41,9 @@ export class UpdateGiftDto {
   @IsOptional()
   @IsString()
   videoUrl?: string;
+
+    @ApiPropertyOptional({ example: 'rare' })
+    @IsOptional()
+    @IsString()
+    rarity?: string;
 }
