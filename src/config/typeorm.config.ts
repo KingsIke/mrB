@@ -37,6 +37,7 @@ import { GroupMember } from '../groups/entities/group-member.entity';
 import { GroupMessage } from '../groups/entities/group-message.entity';
 import { MessageAttachment } from '../groups/entities/message-attachment.entity';
 import { MessageReaction } from '../groups/entities/message-reaction.entity';
+import { CallHistory } from '../calls/entities/call-history.entity';
 import { Note } from '../notes/entities/note.entity';
 
 config();
@@ -88,6 +89,7 @@ export default new DataSource({
     GroupMessage,
     MessageAttachment,
     MessageReaction,
+    CallHistory,
   ],
   migrations: ['src/database/migrations/*{.ts,.js}'],
   synchronize: false,

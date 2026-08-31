@@ -32,6 +32,7 @@ import { ProjectTopicsModule } from './project-topics/project-topics.module';
 import { DepartmentWarModule } from './department-war/department-war.module';
 import { TreasureHuntModule } from './treasure-hunt/treasure-hunt.module';
 import { MaterialsModule } from './materials/materials.module';
+import { CallsModule } from './calls/calls.module';
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { MaterialsModule } from './materials/materials.module';
     DepartmentWarModule,
     TreasureHuntModule,
     MaterialsModule,
+    CallsModule,
   ],
 })
 export class AppModule {}

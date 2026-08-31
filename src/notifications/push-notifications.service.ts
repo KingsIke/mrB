@@ -1,12 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import axios from 'axios';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not } from 'typeorm';
 import { User } from '../users/entities/user.entity';
 import { Notification, NotificationType } from './entities/notification.entity';
 
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+const EXPO_PUSH_API = 'https://exp.host/--/api/v2/push/send';
+const EXPO_PUSH_BATCH_API = 'https://exp.host/--/api/v2/push/send';
 
 const NOTIFICATION_MESSAGES: Record<
   NotificationType,
@@ -128,6 +127,7 @@ const ANDROID_CHANNEL_ID: Record<string, string> = {
   messages: 'messages_v2',
   gifts: 'gifts_v2',
   system: 'system_v2',
+  calls: 'calls_v1',
 };
 
 const CHANNEL_MAP: Record<NotificationType, string> = {
@@ -160,30 +160,29 @@ const CHANNEL_MAP: Record<NotificationType, string> = {
   [NotificationType.TREASURE_HUNT_REMINDER]: 'system',
 };
 
-interface ExpoPushMessage {
-  to: string;
-  title: string;
-  body: string;
-  sound: 'default';
-  badge?: number;
-  data?: Record<string, unknown>;
-  channelId?: string;
+/** Check if a token is an Expo push token */
+function isExpoPushToken(token: string): boolean {
+  return token.startsWith('ExponentPushToken[') || token.startsWith('ExpoPushToken[');
 }
 
+
 @Injectable()
-export class PushNotificationsService {
+export class PushNotificationsService implements OnModuleInit {
   private readonly logger = new Logger(PushNotificationsService.name);
 
   constructor(
-    private readonly configService: ConfigService,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     @InjectRepository(Notification)
     private readonly notificationRepository: Repository<Notification>,
   ) {}
 
+  onModuleInit() {
+    this.logger.log('[Push] Push notification service ready (Expo Push API)');
+  }
+
   /**
-   * Save or update a user's Expo push token.
+   * Save or update a user's push token.
    * Disassociates this token from any other accounts on the same device.
    */
   async registerToken(userId: string, pushToken: string): Promise<{ success: boolean }> {
@@ -261,28 +260,24 @@ export class PushNotificationsService {
       return;
     }
 
-    const payloadData = {
+    const payloadData: Record<string, string> = {
       type,
-      ...(actorId ? { senderId: actorId } : {}),
-      ...(data ?? {}),
-    };
-
-    // Count unread notifications for the badge count
-    const badgeCount = await this.notificationRepository.count({
-      where: { recipientId: userId, isRead: false },
-    });
-
-    const message: ExpoPushMessage = {
-      to: user.pushToken,
       title: messageConfig.title,
       body: messageConfig.body(actorName, extra),
-      sound: 'default',
-      badge: badgeCount + 1, // +1 because this notification is about to be created
-      channelId: ANDROID_CHANNEL_ID[CHANNEL_MAP[type] ?? 'default'],
-      data: payloadData,
+      senderName: actorName,
+      ...(actorId ? { senderId: actorId } : {}),
+      ...Object.entries(data ?? {}).reduce((acc, [k, v]) => ({ ...acc, [k]: String(v) }), {}),
     };
 
-    await this.sendBatch([message]);
+    const channelId = ANDROID_CHANNEL_ID[CHANNEL_MAP[type] ?? 'default'];
+
+    await this.sendExpoSingle(
+      user.pushToken,
+      messageConfig.title,
+      messageConfig.body(actorName, extra),
+      payloadData,
+      channelId,
+    );
   }
 
   /**
@@ -314,24 +309,31 @@ export class PushNotificationsService {
       ...(data ?? {}),
     };
 
-    const messages: ExpoPushMessage[] = users
+    const tokens = users
       .filter((u) => u.pushToken)
-      .map((u) => ({
-        to: u.pushToken!,
-        title: messageConfig.title,
-        body: messageConfig.body(actorName, extra),
-        sound: 'default',
-        channelId,
-        data: payloadData,
-      }));
+      .map((u) => u.pushToken!);
 
-    const skipped = users.length - messages.length;
+    const skipped = users.length - tokens.length;
     if (skipped > 0) {
       this.logger.warn(`[Push] ${skipped}/${users.length} users had no push token for ${type}`);
     }
 
-    if (messages.length) {
-      await this.sendBatch(messages);
+    if (tokens.length) {
+      const expoData: Record<string, string> = {
+        type,
+        title: messageConfig.title,
+        body: messageConfig.body(actorName, extra),
+        senderName: actorName,
+        ...(actorId ? { senderId: actorId } : {}),
+        ...Object.entries(data ?? {}).reduce((acc, [k, v]) => ({ ...acc, [k]: String(v) }), {}),
+      };
+      await this.sendExpoBatch(
+        tokens,
+        messageConfig.title,
+        messageConfig.body(actorName, extra),
+        expoData,
+        channelId,
+      );
     }
   }
 
@@ -350,51 +352,122 @@ export class PushNotificationsService {
       return;
     }
 
-    await this.sendBatch([
-      {
-        to: user.pushToken,
-        title,
-        body,
-        sound: 'default',
-        channelId: ANDROID_CHANNEL_ID.default,
-        data,
-      },
-    ]);
+    const expoData: Record<string, string> = data
+      ? Object.entries(data).reduce((acc, [k, v]) => ({ ...acc, [k]: String(v) }), {})
+      : {};
+
+    await this.sendExpoSingle(
+      user.pushToken,
+      title,
+      body,
+      expoData,
+      ANDROID_CHANNEL_ID.default,
+    );
   }
 
   /**
-   * Send batch of messages to Expo Push API.
-   * Expo allows up to 100 messages per request.
+   * Send a push notification to a single device via Expo Push Service.
    */
-  private async sendBatch(messages: ExpoPushMessage[]): Promise<void> {
-    for (let i = 0; i < messages.length; i += 100) {
-      const chunk = messages.slice(i, i + 100);
+  private async sendExpoSingle(
+    token: string,
+    title: string,
+    body: string,
+    data: Record<string, string>,
+    channelId: string = 'default_3',
+  ): Promise<void> {
+    try {
+      const payload: Record<string, any> = {
+        to: token,
+        title,
+        body,
+        data,
+        priority: 'high',
+        ...(channelId ? { channelId } : {}),
+      };
+
+      const response = await fetch(EXPO_PUSH_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json() as any;
+
+      if (result.data?.id) {
+        this.logger.log(`[Push] Expo ticket: ${result.data.id}`);
+      }
+
+      // Handle errors — Expo returns per-ticket errors
+      if (result.data?.status === 'error') {
+        const error = result.data;
+        if (
+          error.message?.includes('InvalidCredentials') ||
+          error.message?.includes('DeviceNotRegistered')
+        ) {
+          this.logger.log(`[Push] Removing invalid Expo token: ${token.substring(0, 30)}...`);
+          await this.userRepository.update({ pushToken: token }, { pushToken: null });
+        } else {
+          this.logger.warn(`[Push] Expo push error: ${error.message}`);
+        }
+      }
+    } catch (error) {
+      this.logger.error('Failed to send Expo push notification', error);
+    }
+  }
+
+  /**
+   * Send batch of messages via Expo Push Service.
+   * Expo allows up to 100 messages per batch.
+   */
+  private async sendExpoBatch(
+    tokens: string[],
+    title: string,
+    body: string,
+    data: Record<string, string>,
+    channelId: string = 'default_3',
+  ): Promise<void> {
+    for (let i = 0; i < tokens.length; i += 100) {
+      const chunk = tokens.slice(i, i + 100);
       try {
-        this.logger.log(`[Push] Sending batch of ${chunk.length} messages to Expo`);
-        const response = await axios.post(EXPO_PUSH_URL, chunk, {
+        this.logger.log(`[Push] Sending Expo batch to ${chunk.length} devices`);
+
+        const messages = chunk.map((token) => ({
+          to: token,
+          title,
+          body,
+          data,
+          priority: 'high',
+          ...(channelId ? { channelId } : {}),
+        }));
+
+        const response = await fetch(EXPO_PUSH_BATCH_API, {
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(messages),
         });
 
-        if (response.data?.data) {
-          const errors = response.data.data.filter((r: any) => r.status === 'error');
-          if (errors.length) {
-            this.logger.warn(`Expo push errors: ${JSON.stringify(errors)}`);
-            for (const err of errors) {
-              if (
-                err.message?.includes('InvalidCredentials') ||
-                err.message?.includes('DeviceNotRegistered')
-              ) {
-                const token = err.to;
-                if (token) {
-                  await this.userRepository.update({ pushToken: token }, { pushToken: null });
-                  this.logger.log(`Removed invalid push token: ${token}`);
-                }
-              }
+        const result = await response.json() as any;
+        const tickets = result.data || [];
+
+        // Handle per-ticket errors
+        for (let idx = 0; idx < tickets.length; idx++) {
+          const ticket = tickets[idx];
+          if (ticket.status === 'error') {
+            const error = ticket.message || ticket.details?.error;
+            if (
+              error === 'DeviceNotRegistered' ||
+              error === 'InvalidCredentials'
+            ) {
+              this.logger.log(`[Push] Removing invalid Expo token: ${chunk[idx].substring(0, 30)}...`);
+              await this.userRepository.update({ pushToken: chunk[idx] }, { pushToken: null });
+            } else {
+              this.logger.warn(`[Push] Expo error for token: ${error}`);
             }
-          } else {
-            this.logger.log(`[Push] All ${chunk.length} messages accepted by Expo`);
           }
         }
+
+        const successCount = tickets.filter((t: any) => t.status === 'ok').length;
+        this.logger.log(`[Push] Expo: ${successCount}/${chunk.length} sent successfully`);
       } catch (error) {
         this.logger.error('Failed to send Expo push notifications', error);
       }

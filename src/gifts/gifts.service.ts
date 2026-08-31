@@ -252,6 +252,8 @@ export class GiftsService {
         giftIcon: '🎁',
         giftVideoUrl: gift.videoUrl || '',
         giftAnimationUrl: gift.animationUrl || '',
+        giftCoinCost: gift.coinCost,
+        giftRarity: gift.coinCost >= 1000 ? 'legendary' : gift.coinCost >= 100 ? 'epic' : 'rare',
         senderId,
         groupId: dto.targetType === GiftTargetType.GROUP || dto.targetType === GiftTargetType.DM ? dto.targetId : undefined,
       },

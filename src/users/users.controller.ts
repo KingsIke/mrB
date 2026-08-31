@@ -26,6 +26,7 @@ import {
 } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { GamificationService } from '../gamification/gamification.service';
+import { StreamService } from './stream.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdatePrivacyDto } from './dto/update-privacy.dto';
 import { User } from './entities/user.entity';
@@ -42,6 +43,7 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly gamificationService: GamificationService,
+    private readonly streamService: StreamService,
   ) {}
 
   // --------------------------------------------------------------------------
@@ -133,6 +135,44 @@ export class UsersController {
     const user = await this.usersService.updateProfile(userId, dto, file);
     const { password, ...userWithoutPassword } = user;
     return userWithoutPassword;
+  }
+
+  // --------------------------------------------------------------------------
+  // 📹 STREAM VIDEO CALL ROUTES
+  // --------------------------------------------------------------------------
+
+  @Post('stream/token')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Generate a Stream Video token for the current user' })
+  @ApiResponse({ status: 200, description: 'Stream token and API key' })
+  async getStreamToken(@CurrentUser('userId') userId: string) {
+    const result = await this.streamService.generateToken(userId);
+    if (!result) {
+      throw new NotFoundException('Could not generate Stream token');
+    }
+    return result;
+  }
+
+  @Post('stream/register-device')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Register a device for Stream push notifications' })
+  @ApiBody({ schema: { properties: { pushToken: { type: 'string' }, provider: { type: 'string', enum: ['apn', 'firebase'] } } } })
+  async registerStreamDevice(
+    @CurrentUser('userId') userId: string,
+    @Body() body: { pushToken: string; provider?: 'apn' | 'firebase' },
+  ) {
+    return this.streamService.registerDevice(userId, body.pushToken, body.provider || 'firebase');
+  }
+
+  @Post('stream/remove-device')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Remove a device from Stream push notifications' })
+  @ApiBody({ schema: { properties: { pushToken: { type: 'string' } } } })
+  async removeStreamDevice(
+    @CurrentUser('userId') userId: string,
+    @Body() body: { pushToken: string },
+  ) {
+    return this.streamService.removeDevice(userId, body.pushToken);
   }
 
   // --------------------------------------------------------------------------

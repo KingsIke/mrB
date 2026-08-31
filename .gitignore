@@ -43,3 +43,6 @@ lerna-debug.log*
 /uploads/*
 !/uploads/.gitkeep
 CLAUDE.md
+
+# Firebase service account key
+src/config/firebase-service-account.json
