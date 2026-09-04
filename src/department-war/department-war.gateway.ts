@@ -17,6 +17,7 @@ export enum WarWebSocketEvents {
   // Client → Server
   JOIN_BATTLE_ROOM = 'war:join_room',
   LEAVE_BATTLE_ROOM = 'war:leave_room',
+  RESUME_BATTLE = 'war:resume',
 
   // Server → Client
   CHALLENGE_SENT = 'war:challenge_sent',
@@ -27,6 +28,7 @@ export enum WarWebSocketEvents {
   ANSWER_SUBMITTED = 'war:answer_submitted',
   SCORE_UPDATE = 'war:score_update',
   BATTLE_ENDED = 'war:battle_ended',
+  BATTLE_RESUMED = 'war:battle_resumed',
   SCHEDULED_REMINDER = 'war:scheduled_reminder',
   OPPONENT_DISCONNECTED = 'war:opponent_disconnected',
 }
@@ -46,7 +48,15 @@ export class DepartmentWarGateway implements OnGatewayConnection, OnGatewayDisco
   private userSockets = new Map<string, string>();
   private socketUsers = new Map<string, string>();
 
+  // Set by DepartmentWarService to avoid a circular dependency.
+  // Used to answer war:resume requests with the user's current battle state.
+  private resumeHandler: ((userId: string) => Promise<any>) | null = null;
+
   constructor(private jwtService: JwtService, private configService: ConfigService) {}
+
+  setResumeHandler(handler: (userId: string) => Promise<any>) {
+    this.resumeHandler = handler;
+  }
 
   async handleConnection(client: Socket) {
     try {
@@ -94,6 +104,27 @@ export class DepartmentWarGateway implements OnGatewayConnection, OnGatewayDisco
   ) {
     client.leave(`war:${data.battleId}`);
     this.logger.log(`Client ${client.id} left war room: ${data.battleId}`);
+  }
+
+  /**
+   * A player reconnected (or reopened the app) mid-battle. Respond with a
+   * snapshot of their current battle so the client can resume on the exact
+   * question they're on — or tell them the battle already ended.
+   */
+  @SubscribeMessage(WarWebSocketEvents.RESUME_BATTLE)
+  async handleResumeBattle(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { battleId?: string },
+  ) {
+    const userId = this.socketUsers.get(client.id);
+    if (!userId || !this.resumeHandler) return;
+    try {
+      const payload = await this.resumeHandler(userId);
+      client.emit(WarWebSocketEvents.BATTLE_RESUMED, payload);
+    } catch (err) {
+      this.logger.warn(`Resume failed for user ${userId}: ${err}`);
+      client.emit(WarWebSocketEvents.BATTLE_RESUMED, { status: 'none' });
+    }
   }
 
   // ── Emit helpers ──

@@ -33,6 +33,7 @@ import { DepartmentWarModule } from './department-war/department-war.module';
 import { TreasureHuntModule } from './treasure-hunt/treasure-hunt.module';
 import { MaterialsModule } from './materials/materials.module';
 import { CallsModule } from './calls/calls.module';
+import { CoinBattleModule } from './coin-battle/coin-battle.module';
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { CallsModule } from './calls/calls.module';
     TreasureHuntModule,
     MaterialsModule,
     CallsModule,
+    CoinBattleModule,
   ],
 })
 export class AppModule {}

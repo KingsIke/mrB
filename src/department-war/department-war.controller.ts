@@ -100,6 +100,12 @@ export class DepartmentWarController {
     return this.warService.getActiveBattle(userId);
   }
 
+  @Get('resume')
+  @ApiOperation({ summary: 'Get resume state (active battle snapshot, recently finished battle, or none) for a reconnecting user' })
+  async resume(@CurrentUser('userId') userId: string) {
+    return this.warService.buildResumePayload(userId);
+  }
+
   @Get('pending-challenges')
   @ApiOperation({ summary: 'Get all incoming WAITING challenges where you are the opponent (player2)' })
   async getPendingChallenges(@CurrentUser('userId') userId: string) {

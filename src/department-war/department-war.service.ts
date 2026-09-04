@@ -29,6 +29,16 @@ import { NotificationType, NotificationTargetType } from '../notifications/entit
 export class DepartmentWarService {
   private readonly logger = new Logger(DepartmentWarService.name);
 
+  /**
+   * In-memory per-question timers so battles keep progressing even when a
+   * player disconnects or never answers. The battle auto-records a no-answer
+   * for anyone who missed the question, then advances / finishes.
+   */
+  private questionTimers = new Map<
+    string,
+    { timer: NodeJS.Timeout; questionIndex: number; startedAt: number }
+  >();
+
   constructor(
     @InjectRepository(Question) private questionRepo: Repository<Question>,
     @InjectRepository(Battle) private battleRepo: Repository<Battle>,
@@ -38,7 +48,225 @@ export class DepartmentWarService {
     @InjectRepository(User) private userRepo: Repository<User>,
     private gateway: DepartmentWarGateway,
     private notificationsService: NotificationsService,
-  ) {}
+  ) {
+    // Avoids a circular import: the gateway asks us to build resume snapshots.
+    this.gateway.setResumeHandler((userId) => this.buildResumePayload(userId));
+  }
+
+  // ─────────────────────────────────────────────────────
+  // QUESTION TIMERS (server-side progression)
+  // ─────────────────────────────────────────────────────
+
+  private clearQuestionTimer(battleId: string) {
+    const existing = this.questionTimers.get(battleId);
+    if (existing) {
+      clearTimeout(existing.timer);
+      this.questionTimers.delete(battleId);
+    }
+  }
+
+  private startQuestionTimer(battle: Battle) {
+    this.clearQuestionTimer(battle.id);
+    if (battle.status !== BattleStatus.ACTIVE) return;
+
+    const timeoutMs = (battle.timePerQuestion || 15) * 1000;
+    const timer = setTimeout(() => {
+      this.handleQuestionTimeout(battle.id).catch((err) => {
+        this.logger.error(`handleQuestionTimeout failed for battle ${battle.id}: ${err}`);
+      });
+    }, timeoutMs);
+
+    this.questionTimers.set(battle.id, {
+      timer,
+      questionIndex: battle.currentQuestionIndex,
+      startedAt: Date.now(),
+    });
+    this.logger.log(`Started question timer for battle ${battle.id} (q${battle.currentQuestionIndex}, ${battle.timePerQuestion}s)`);
+  }
+
+  /**
+   * Fired when a question's time runs out. Auto-records a no-answer for any
+   * player who didn't answer, then advances to the next question (or finishes
+   * the battle) once both players have been accounted for.
+   */
+  private async handleQuestionTimeout(battleId: string) {
+    const timerState = this.questionTimers.get(battleId);
+    if (!timerState) return;
+    this.questionTimers.delete(battleId);
+
+    const battle = await this.battleRepo.findOne({ where: { id: battleId } });
+    if (!battle || battle.status !== BattleStatus.ACTIVE) return;
+    // Stale timer (question already advanced via submitAnswer) — ignore.
+    if (timerState.questionIndex !== battle.currentQuestionIndex) return;
+
+    const questionIndex = battle.currentQuestionIndex;
+    const players = [battle.player1Id, battle.player2Id].filter(Boolean) as string[];
+
+    const answers = await this.answerRepo.find({ where: { battleId, questionIndex } });
+    const answeredUserIds = new Set(answers.map((a) => a.userId));
+
+    for (const playerId of players) {
+      if (answeredUserIds.has(playerId)) continue;
+      await this.answerRepo.save(
+        this.answerRepo.create({
+          battleId,
+          userId: playerId,
+          questionIndex,
+          selectedOption: null,
+          isCorrect: false,
+          timeTakenMs: (battle.timePerQuestion || 15) * 1000,
+        }),
+      );
+    }
+
+    const nowAnswers = await this.answerRepo.find({ where: { battleId, questionIndex } });
+    const bothAnswered = nowAnswers.length >= 2;
+
+    if (bothAnswered) {
+      // Grace period: when a player was recorded as a no-answer, hold off on
+      // advancing for ~2s so their real answer — submitted right as their
+      // client timer ends, a moment behind the server clock due to network
+      // latency — can upgrade the no-answer record instead of being rejected.
+      const needsGrace = nowAnswers.some((a) => a.selectedOption === null);
+
+      const advance = async () => {
+        const fresh = await this.battleRepo.findOne({ where: { id: battleId } });
+        if (!fresh || fresh.status !== BattleStatus.ACTIVE) return;
+        // Stale — the battle already advanced (e.g. via a submitAnswer upgrade).
+        if (fresh.currentQuestionIndex !== questionIndex) return;
+        const nextIndex = questionIndex + 1;
+        if (nextIndex >= fresh.totalQuestions) {
+          await this.finishBattle(fresh);
+        } else {
+          fresh.currentQuestionIndex = nextIndex;
+          await this.battleRepo.save(fresh);
+          this.gateway.notifyQuestionStart(fresh.player1Id, fresh.player2Id!, {
+            battleId: fresh.id,
+            questionIndex: nextIndex,
+            player1Score: fresh.player1Score,
+            player2Score: fresh.player2Score,
+          });
+          this.startQuestionTimer(fresh);
+        }
+      };
+
+      if (needsGrace) {
+        setTimeout(() => {
+          advance().catch((err) =>
+            this.logger.error(`Grace advance failed for battle ${battleId}: ${err}`),
+          );
+        }, 2000);
+      } else {
+        await advance();
+      }
+    }
+  }
+
+  /**
+   * Build the snapshot returned to a player who reconnects mid-battle (or
+   * after the battle already ended). The client uses this to land on the exact
+   * question in progress, or to show the final result.
+   */
+  async buildResumePayload(userId: string) {
+    const activeBattle = await this.battleRepo.findOne({
+      where: [
+        { player1Id: userId, status: In([BattleStatus.COUNTDOWN, BattleStatus.ACTIVE]) },
+        { player2Id: userId, status: In([BattleStatus.COUNTDOWN, BattleStatus.ACTIVE]) },
+      ],
+      relations: ['player1', 'player2'],
+      order: { createdAt: 'DESC' },
+    });
+
+    if (activeBattle) {
+      let player1Answered = false;
+      let player2Answered = false;
+      let timeLeft: number | undefined;
+
+      if (activeBattle.status === BattleStatus.ACTIVE) {
+        const answers = await this.answerRepo.find({
+          where: { battleId: activeBattle.id, questionIndex: activeBattle.currentQuestionIndex },
+        });
+        player1Answered = answers.some((a) => a.userId === activeBattle.player1Id);
+        player2Answered = activeBattle.player2Id
+          ? answers.some((a) => a.userId === activeBattle.player2Id)
+          : false;
+
+        const timerState = this.questionTimers.get(activeBattle.id);
+        if (timerState && timerState.questionIndex === activeBattle.currentQuestionIndex) {
+          const elapsedMs = Date.now() - timerState.startedAt;
+          timeLeft = Math.max(
+            1,
+            Math.ceil(((activeBattle.timePerQuestion || 15) * 1000 - elapsedMs) / 1000),
+          );
+        }
+      }
+
+      return {
+        status: activeBattle.status === BattleStatus.COUNTDOWN ? 'countdown' : 'active',
+        battleId: activeBattle.id,
+        questions: await this.loadBattleQuestions(activeBattle),
+        totalQuestions: activeBattle.totalQuestions,
+        timePerQuestion: activeBattle.timePerQuestion,
+        questionIndex: activeBattle.currentQuestionIndex,
+        player1Id: activeBattle.player1Id,
+        player2Id: activeBattle.player2Id,
+        player1Score: activeBattle.player1Score,
+        player2Score: activeBattle.player2Score,
+        player1Answered,
+        player2Answered,
+        timeLeft,
+      };
+    }
+
+    // No active battle — maybe one just ended while the player was away.
+    const recentFinished = await this.battleRepo.findOne({
+      where: [
+        { player1Id: userId, status: BattleStatus.FINISHED },
+        { player2Id: userId, status: BattleStatus.FINISHED },
+      ],
+      order: { finishedAt: 'DESC' },
+    });
+    if (
+      recentFinished &&
+      recentFinished.startedAt &&
+      recentFinished.finishedAt &&
+      Date.now() - recentFinished.finishedAt.getTime() < 30 * 60 * 1000
+    ) {
+      return {
+        status: 'finished',
+        battleId: recentFinished.id,
+        player1Id: recentFinished.player1Id,
+        player2Id: recentFinished.player2Id,
+        winnerId: recentFinished.winnerId,
+        player1Score: recentFinished.player1Score,
+        player2Score: recentFinished.player2Score,
+        departmentPoints: recentFinished.departmentPoints,
+        finishedAt: recentFinished.finishedAt,
+      };
+    }
+
+    return { status: 'none' };
+  }
+
+  /**
+   * Resolve the stored question IDs back into question payloads (without the
+   * correct answer) so a reconnecting client can render the full quiz.
+   */
+  private async loadBattleQuestions(battle: Battle) {
+    if (!battle.selectedQuestionIds || battle.selectedQuestionIds.length === 0) return [];
+    const questions = await this.questionRepo.find({
+      where: { id: In(battle.selectedQuestionIds) },
+    });
+    const byId = new Map(questions.map((q) => [q.id, q]));
+    return battle.selectedQuestionIds
+      .map((id) => byId.get(id))
+      .filter(Boolean)
+      .map((q) => ({
+        id: q!.id,
+        questionText: q!.questionText,
+        options: q!.options,
+      }));
+  }
 
   // ─────────────────────────────────────────────────────
   // MATCHMAKING
@@ -370,6 +598,9 @@ export class DepartmentWarService {
           player1Score: b.player1Score,
           player2Score: b.player2Score,
         });
+        // Server-side timer so the battle keeps moving even if a player
+        // disconnects or never answers.
+        this.startQuestionTimer(b);
       }
     }, 3500);
 
@@ -468,12 +699,18 @@ export class DepartmentWarService {
       throw new BadRequestException('You are not in this battle');
     }
 
-    // Check if already answered this question
+    // Check if already answered this question. A no-answer record created by
+    // the question-timeout can be upgraded to a real answer — but only while
+    // the battle is still on this question.
     const existing = await this.answerRepo.findOne({
       where: { battleId: dto.battleId, userId, questionIndex: dto.questionIndex },
     });
-    if (existing) {
+    if (existing && existing.selectedOption !== null) {
       this.logger.warn(`submitAnswer: user ${userId} already answered question ${dto.questionIndex} in battle ${dto.battleId}`);
+      throw new BadRequestException('Already answered this question');
+    }
+    if (existing && battle.currentQuestionIndex !== dto.questionIndex) {
+      this.logger.warn(`submitAnswer: question ${dto.questionIndex} already advanced in battle ${dto.battleId} — rejecting`);
       throw new BadRequestException('Already answered this question');
     }
 
@@ -501,15 +738,21 @@ export class DepartmentWarService {
     const isCorrect = dto.selectedOption === question.correctIndex;
     const points = isCorrect ? this.calculatePoints(dto.timeTakenMs, question.difficulty) : 0;
 
-    // Save answer
-    const answer = this.answerRepo.create({
-      battleId: dto.battleId,
-      userId,
-      questionIndex: dto.questionIndex,
-      selectedOption: dto.selectedOption,
-      isCorrect,
-      timeTakenMs: dto.timeTakenMs,
-    });
+    // Save answer (upgrades a server-recorded no-answer, if present)
+    const answer = existing
+      ? Object.assign(existing, {
+          selectedOption: dto.selectedOption,
+          isCorrect,
+          timeTakenMs: dto.timeTakenMs,
+        })
+      : this.answerRepo.create({
+          battleId: dto.battleId,
+          userId,
+          questionIndex: dto.questionIndex,
+          selectedOption: dto.selectedOption,
+          isCorrect,
+          timeTakenMs: dto.timeTakenMs,
+        });
     try {
       await this.answerRepo.save(answer);
     } catch (err) {
@@ -575,27 +818,36 @@ export class DepartmentWarService {
 
     // If both answered, advance to next question or end battle
     if (bothAnswered) {
-      const nextIndex = dto.questionIndex + 1;
+      // If a player is still recorded as a no-answer, the question-timeout
+      // grace timer is running — don't advance yet, or the other player's
+      // just-in-time answer would be rejected as "already advanced". The
+      // grace timer advances the battle once the window closes.
+      const pendingNoAnswer = answersForQuestion.some((a) => a.selectedOption === null);
+      if (!pendingNoAnswer) {
+        const nextIndex = dto.questionIndex + 1;
 
-      if (nextIndex >= battle.totalQuestions) {
-        // Battle finished!
-        this.logger.log(`submitAnswer: both players answered, battle ${dto.battleId} finished`);
-        await this.finishBattle(battle);
-      } else {
-        battle.currentQuestionIndex = nextIndex;
-        try {
-          await this.battleRepo.save(battle);
-        } catch (err) {
-          this.logger.error(`submitAnswer: failed to save battle progress for ${dto.battleId}: ${err}`);
-          throw err;
+        if (nextIndex >= battle.totalQuestions) {
+          // Battle finished!
+          this.logger.log(`submitAnswer: both players answered, battle ${dto.battleId} finished`);
+          await this.finishBattle(battle);
+        } else {
+          battle.currentQuestionIndex = nextIndex;
+          try {
+            await this.battleRepo.save(battle);
+          } catch (err) {
+            this.logger.error(`submitAnswer: failed to save battle progress for ${dto.battleId}: ${err}`);
+            throw err;
+          }
+
+          this.gateway.notifyQuestionStart(battle.player1Id, battle.player2Id!, {
+            battleId: battle.id,
+            questionIndex: nextIndex,
+            player1Score: battle.player1Score,
+            player2Score: battle.player2Score,
+          });
+          // Restart the server-side question timer for the next question.
+          this.startQuestionTimer(battle);
         }
-
-        this.gateway.notifyQuestionStart(battle.player1Id, battle.player2Id!, {
-          battleId: battle.id,
-          questionIndex: nextIndex,
-          player1Score: battle.player1Score,
-          player2Score: battle.player2Score,
-        });
       }
     } else {
       try {
@@ -1017,6 +1269,16 @@ export class DepartmentWarService {
 
   private async finishBattle(battle: Battle) {
     this.logger.log(`finishBattle: starting for battle ${battle.id}`);
+    this.clearQuestionTimer(battle.id);
+
+    // Idempotency guard: finishBattle can be reached from both submitAnswer and
+    // the question-timeout, so reload and bail out if it already finished.
+    const fresh = await this.battleRepo.findOne({ where: { id: battle.id } });
+    if (!fresh || fresh.status === BattleStatus.FINISHED) {
+      this.logger.log(`finishBattle: battle ${battle.id} already finished — skipping`);
+      return;
+    }
+    battle = fresh;
 
     if (!battle.player2Id) {
       this.logger.warn(`Cannot finish battle ${battle.id}: player2Id is null`);

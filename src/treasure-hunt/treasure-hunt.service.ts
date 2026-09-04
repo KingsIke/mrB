@@ -191,6 +191,43 @@ export class TreasureHuntService {
     };
   }
 
+  /**
+   * Get recent claims with user info for display on the treasure hunt screen.
+   */
+  async getRecentClaims(limit = 10) {
+    const claims = await this.claimRepo
+      .createQueryBuilder('c')
+      .leftJoinAndSelect('c.user', 'user')
+      .leftJoinAndSelect('c.treasureHunt', 'hunt')
+      .leftJoinAndSelect('hunt.gift', 'gift')
+      .orderBy('c.claimedAt', 'DESC')
+      .take(limit)
+      .getMany();
+
+    return claims.map((c) => ({
+      id: c.id,
+      user: {
+        id: c.user.id,
+        firstName: c.user.firstName,
+        lastName: c.user.lastName,
+        username: c.user.username,
+        profilePictureUrl: c.user.profilePictureUrl,
+      },
+      gift: c.treasureHunt?.gift
+        ? {
+            id: c.treasureHunt.gift.id,
+            name: c.treasureHunt.gift.name,
+            animationUrl: c.treasureHunt.gift.animationUrl,
+            bonusCoins: c.treasureHunt.gift.coinCost,
+            
+          }
+        : null,
+      huntName: c.treasureHunt?.name || 'Mystery Box',
+      // bonusCoins: c.treasureHunt?.bonusCoins || 0,
+      claimedAt: c.claimedAt,
+    }));
+  }
+
   // ── Admin-facing ──────────────────────────────────────────────────
 
   async getAll() {

@@ -38,6 +38,17 @@ export class TreasureHuntController {
     return { treasure };
   }
 
+  @Get('recent-claims')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get recent treasure hunt claims with user info' })
+  async recentClaims(
+    @Query('limit') limit?: string,
+  ) {
+    const claims = await this.service.getRecentClaims(limit ? parseInt(limit, 10) : 10);
+    return { claims };
+  }
+
   @Post('claim/:huntId')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

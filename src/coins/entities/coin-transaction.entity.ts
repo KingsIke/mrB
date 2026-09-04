@@ -12,6 +12,9 @@ export enum CoinTransactionType {
   CONVERT_EARNINGS = 'convert_earnings',
   WITHDRAWAL = 'withdrawal',
   TREASURE_HUNT_REWARD = 'treasure_hunt_reward',
+  BATTLE_ENTRY = 'battle_entry',
+  BATTLE_WIN = 'battle_win',
+  BATTLE_REFUND = 'battle_refund',
 }
 
 @Entity('coin_transactions')
