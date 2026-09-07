@@ -40,6 +40,9 @@ import { UpdateJobStatusDto } from './dto/update-job-status.dto';
 import { UpdateGiftDto } from './dto/update-gift.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { UpdateVerificationDto } from './dto/update-verification.dto';
+import { UpdateStudentUnionDto } from './dto/update-student-union.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType, NotificationTargetType } from '../notifications/entities/notification.entity';
 import {
   AdminTransactionQueryDto,
   AdminTransactionType,
@@ -136,6 +139,7 @@ export class AdminService {
     private readonly battleRepository: Repository<Battle>,
     @InjectRepository(DeptWarStats)
     private readonly deptWarStatsRepository: Repository<DeptWarStats>,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -289,7 +293,101 @@ export class AdminService {
       );
     }
     user.verificationStatus = dto.status;
-    return this.userRepository.save(user);
+    const saved = await this.userRepository.save(user);
+
+    // Notify the student of the decision (in-app + Expo push). Never let a
+    // notification failure fail the admin action itself.
+    try {
+      await this.notificationsService.notify(
+        saved.id,
+        null,
+        dto.status === 'verified'
+          ? NotificationType.STUDENT_VERIFICATION_APPROVED
+          : NotificationType.STUDENT_VERIFICATION_REJECTED,
+        NotificationTargetType.USER,
+        saved.id,
+        'The Admin Team',
+      );
+    } catch {
+      // best-effort — the decision is already persisted
+    }
+
+    return saved;
+  }
+
+  // ------------------------------------------------------------------
+  // Student Union verification
+  // ------------------------------------------------------------------
+
+  /**
+   * Users who submitted a Student Union proof document, pending first,
+   * then verified, then rejected, newest first within each group.
+   */
+  async listStudentUnionRequests(): Promise<User[]> {
+    const users = await this.userRepository.find({
+      where: [{ studentUnionStatus: Not('none') }, { studentUnionDocUrl: Not(IsNull()) }],
+      relations: ['school', 'faculty', 'department'],
+      order: { createdAt: 'DESC' },
+    });
+
+    const priority: Record<string, number> = {
+      pending: 0,
+      verified: 1,
+      rejected: 2,
+      none: 3,
+    };
+    users.sort((a, b) => {
+      const diff =
+        (priority[a.studentUnionStatus] ?? 9) -
+        (priority[b.studentUnionStatus] ?? 9);
+      if (diff !== 0) return diff;
+      return b.createdAt.getTime() - a.createdAt.getTime();
+    });
+    return users;
+  }
+
+  /**
+   * Approve or reject a Student Union verification. By default the
+   * studentUnion access flag follows the decision: verified grants it,
+   * rejected/pending revokes it. Pass grantAccess explicitly to override.
+   */
+  async updateStudentUnion(id: string, dto: UpdateStudentUnionDto): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id } });
+    if (!user) {
+      throw new NotFoundException(`User with ID "${id}" not found`);
+    }
+    if (dto.status === 'verified' && !user.studentUnionDocUrl) {
+      throw new BadRequestException(
+        'Cannot verify a user who has not uploaded a Student Union document',
+      )
+    }
+
+    user.studentUnionStatus = dto.status;
+    if (dto.grantAccess !== undefined) {
+      user.studentUnion = dto.grantAccess;
+    } else {
+      user.studentUnion = dto.status === 'verified';
+    }
+    const saved = await this.userRepository.save(user);
+
+    // Notify the student of the decision (in-app + Expo push). Never let a
+    // notification failure fail the admin action itself.
+    try {
+      await this.notificationsService.notify(
+        saved.id,
+        null,
+        dto.status === 'verified'
+          ? NotificationType.STUDENT_UNION_VERIFIED
+          : NotificationType.STUDENT_UNION_REJECTED,
+        NotificationTargetType.USER,
+        saved.id,
+        'The Admin Team',
+      );
+    } catch (err) {
+      // best-effort — the decision is already persisted
+    }
+
+    return saved;
   }
 
   // ------------------------------------------------------------------

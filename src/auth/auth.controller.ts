@@ -3,6 +3,7 @@ import {
   Post,
   Body,
   UseInterceptors,
+  UploadedFile,
   UploadedFiles,
   HttpCode,
   HttpStatus,
@@ -11,7 +12,7 @@ import {
   Query,
   BadRequestException,
 } from '@nestjs/common';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBearerAuth } from '@nestjs/swagger';
 import {
   AuthService,
@@ -323,6 +324,36 @@ export class AuthController {
       schoolIdCard: files?.schoolIdCard?.[0],
       administrationLetter: files?.administrationLetter?.[0],
     });
+  }
+
+  @Post('student-union/verification')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(
+    FileInterceptor('document', {
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024 },
+      fileFilter: (req, file, callback) => {
+        const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+        if (allowedMimes.includes(file.mimetype)) {
+          callback(null, true);
+        } else {
+          callback(new Error('Only images (JPEG, PNG, WebP) or PDF files are allowed'), false);
+        }
+      },
+    }),
+  )
+  @ApiBearerAuth()
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Submit or replace Student Union proof document (users & admins)',
+  })
+  @ApiResponse({ status: 200, description: 'Document submitted for review' })
+  @ApiResponse({ status: 400, description: 'Missing document or already verified' })
+  async submitStudentUnionVerification(
+    @CurrentUser('userId') userId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.authService.submitStudentUnionVerification(userId, file);
   }
 
   @Get('onboarding-status')

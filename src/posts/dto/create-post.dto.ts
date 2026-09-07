@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsBoolean, IsEnum, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsArray, IsBoolean, IsEnum, IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { PostCategory, PostStatus, PostVisibility, CommentPermission } from '../entities/post.entity';
 
 export class CreatePostDto {
@@ -57,4 +57,24 @@ export class CreatePostDto {
   @IsArray() 
   @IsString({ each: true })
   hashtags?: string[];
+
+  @ApiPropertyOptional({ description: 'Hex background color for text-only posts' })
+  @IsOptional()
+  @IsString()
+  backgroundColor?: string;
+
+  @ApiPropertyOptional({ description: 'Text alignment adjustment for text-only posts', enum: ['left', 'center', 'right'] })
+  @IsOptional()
+  @IsIn(['left', 'center', 'right'])
+  textAlign?: 'left' | 'center' | 'right';
+
+  @ApiPropertyOptional({ description: 'Font style preset for text-only posts', enum: ['classic', 'serif', 'typewriter', 'light', 'strong'] })
+  @IsOptional()
+  @IsIn(['classic', 'serif', 'typewriter', 'light', 'strong'])
+  fontStyle?: 'classic' | 'serif' | 'typewriter' | 'light' | 'strong';
+
+  @ApiPropertyOptional({ description: 'Font size preset for text-only posts', enum: ['small', 'medium', 'large'] })
+  @IsOptional()
+  @IsIn(['small', 'medium', 'large'])
+  fontSize?: 'small' | 'medium' | 'large';
 }

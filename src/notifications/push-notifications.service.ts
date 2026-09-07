@@ -119,6 +119,22 @@ const NOTIFICATION_MESSAGES: Record<
     title: '🗺️ Treasure Still Available!',
     body: (_actorName, extra) => `${extra ?? 'A treasure hunt is still waiting to be claimed!'}`,
   },
+  [NotificationType.STUDENT_UNION_VERIFIED]: {
+    title: '✅ Student Union Verified',
+    body: () => 'Your Student Union status is confirmed! You can now create campus events.',
+  },
+  [NotificationType.STUDENT_UNION_REJECTED]: {
+    title: '❌ Student Union Verification',
+    body: () => 'Your Student Union document was not approved. Please resubmit with a different document.',
+  },
+  [NotificationType.STUDENT_VERIFICATION_APPROVED]: {
+    title: '🎓 Student Verified',
+    body: () => 'Your student identity is verified! Your verified badge is now active.',
+  },
+  [NotificationType.STUDENT_VERIFICATION_REJECTED]: {
+    title: '⚠️ Student Verification',
+    body: () => 'Your verification documents were not approved. Please review and resubmit.',
+  },
 };
 
 const ANDROID_CHANNEL_ID: Record<string, string> = {
@@ -158,6 +174,10 @@ const CHANNEL_MAP: Record<NotificationType, string> = {
   [NotificationType.PAST_QUESTION_UPLOADED]: 'system',
   [NotificationType.TREASURE_HUNT_CREATED]: 'system',
   [NotificationType.TREASURE_HUNT_REMINDER]: 'system',
+  [NotificationType.STUDENT_UNION_VERIFIED]: 'system',
+  [NotificationType.STUDENT_UNION_REJECTED]: 'system',
+  [NotificationType.STUDENT_VERIFICATION_APPROVED]: 'system',
+  [NotificationType.STUDENT_VERIFICATION_REJECTED]: 'system',
 };
 
 /** Check if a token is an Expo push token */

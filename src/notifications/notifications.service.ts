@@ -93,6 +93,14 @@ export class NotificationsService {
         return `A new treasure hunt has appeared!`;
       case NotificationType.TREASURE_HUNT_REMINDER:
         return `A treasure hunt is still waiting to be claimed!`;
+      case NotificationType.STUDENT_UNION_VERIFIED:
+        return `Your Student Union status is confirmed! You can now create campus events.`;
+      case NotificationType.STUDENT_UNION_REJECTED:
+        return `Your Student Union document was not approved. Please resubmit with a different document.`;
+      case NotificationType.STUDENT_VERIFICATION_APPROVED:
+        return `Your student identity is verified! Your verified badge is now active.`;
+      case NotificationType.STUDENT_VERIFICATION_REJECTED:
+        return `Your verification documents were not approved. Please review and resubmit.`;
       default:
         return `${actorName} interacted with your content`;
     }

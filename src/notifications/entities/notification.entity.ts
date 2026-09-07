@@ -29,6 +29,10 @@ export enum NotificationType {
   WAR_SCHEDULED_REMINDER = 'war_scheduled_reminder',
   TREASURE_HUNT_CREATED = 'treasure_hunt_created',
   TREASURE_HUNT_REMINDER = 'treasure_hunt_reminder',
+  STUDENT_UNION_VERIFIED = 'student_union_verified',
+  STUDENT_UNION_REJECTED = 'student_union_rejected',
+  STUDENT_VERIFICATION_APPROVED = 'student_verification_approved',
+  STUDENT_VERIFICATION_REJECTED = 'student_verification_rejected',
 }
 
 export enum NotificationTargetType {

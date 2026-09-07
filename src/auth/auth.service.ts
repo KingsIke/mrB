@@ -566,6 +566,7 @@ export class AuthService {
         lastName: dto.lastName,
         dateOfBirth: new Date(dto.dateOfBirth),
         gender: dto.gender,
+        programType: dto.programType || undefined,
         schoolId: dto.schoolId,
         facultyId: dto.facultyId,
         departmentId: dto.departmentId,
@@ -1039,6 +1040,11 @@ export class AuthService {
       schoolIdCard?: Express.Multer.File;
       administrationLetter?: Express.Multer.File;
     },
+    rejectionData?: {
+      rejectionReason?: string;
+      isStudentIdRejected?: boolean;
+      isAdmissionLetterRejected?: boolean;
+    },
   ): Promise<{ message: string; user: Partial<User> }> {
     const user = await this.usersService.findById(userId);
     if (!user) {
@@ -1049,7 +1055,7 @@ export class AuthService {
       throw new BadRequestException("Your account is already verified");
     }
 
-    if (!files?.schoolIdCard && !files?.administrationLetter) {
+    if (!files?.schoolIdCard && !files?.administrationLetter && !rejectionData) {
       throw new BadRequestException(
         "Please upload at least one document: your student ID card or admission letter.",
       );
@@ -1079,17 +1085,88 @@ export class AuthService {
       administrationLetterUrl = result.secure_url;
     }
 
-    const updatedUser = await this.usersService.update(userId, {
+    // If rejection data is provided (e.g., admin rejection), update rejection fields
+    const updateData: any = {
       schoolIdCardUrl,
       administrationLetterUrl,
-      verificationStatus: "pending",
-    });
+    };
+
+    if (rejectionData) {
+      if (rejectionData.rejectionReason !== undefined) {
+        updateData.rejectionReason = rejectionData.rejectionReason;
+      }
+      if (rejectionData.isStudentIdRejected !== undefined) {
+        updateData.isStudentIdRejected = rejectionData.isStudentIdRejected;
+      }
+      if (rejectionData.isAdmissionLetterRejected !== undefined) {
+        updateData.isAdmissionLetterRejected = rejectionData.isAdmissionLetterRejected;
+      }
+      // If documents were rejected, set verification status to rejected
+      if (rejectionData.isStudentIdRejected || rejectionData.isAdmissionLetterRejected) {
+        updateData.verificationStatus = "rejected";
+      } else {
+        updateData.verificationStatus = "pending";
+      }
+    } else {
+      updateData.verificationStatus = "pending";
+    }
+
+    const updatedUser = await this.usersService.update(userId, updateData);
 
     const { password, ...userWithoutPassword } = updatedUser;
 
     return {
       message:
-        "Your documents have been submitted. Verification usually takes less than 24 hours.",
+        rejectionData
+          ? "Your verification has been reviewed."
+          : "Your documents have been submitted. Verification usually takes less than 24 hours.",
+      user: userWithoutPassword,
+    };
+  }
+
+  // ========== STUDENT UNION VERIFICATION (SUBMIT / RESUBMIT) ==========
+  async submitStudentUnionVerification(
+    userId: string,
+    file?: Express.Multer.File,
+  ): Promise<{ message: string; user: Partial<User> }> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException("User not found");
+    }
+
+    if (user.studentUnion) {
+      throw new BadRequestException("You are already a verified Student Union member");
+    }
+
+    if (!file) {
+      throw new BadRequestException(
+        "Please upload a document proving your Student Union membership.",
+      );
+    }
+
+    const result = await this.cloudinaryService.uploadFile(file, {
+      folder: "school-social/student-union-docs",
+      resourceType: "auto",
+    });
+
+    // Allow resubmission if previously rejected or pending - reset status to pending
+    const previousStatus = user.studentUnionStatus;
+    const updatedUser = await this.usersService.update(userId, {
+      studentUnionDocUrl: result.secure_url,
+      studentUnionStatus: "pending",
+    });
+
+    const { password, ...userWithoutPassword } = updatedUser;
+
+    const message =
+      previousStatus === "rejected"
+        ? "Your previous document was declined. Your new document has been submitted for review."
+        : previousStatus === "pending"
+        ? "Your document has been replaced. The new document will be reviewed."
+        : "Your Student Union document has been submitted for review. You will be notified once an admin verifies it.";
+
+    return {
+      message,
       user: userWithoutPassword,
     };
   }

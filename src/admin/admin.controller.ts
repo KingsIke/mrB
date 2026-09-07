@@ -28,6 +28,7 @@ import { UpdateJobStatusDto } from './dto/update-job-status.dto';
 import { UpdateGiftDto } from './dto/update-gift.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { UpdateVerificationDto } from './dto/update-verification.dto';
+import { UpdateStudentUnionDto } from './dto/update-student-union.dto';
 import {
   AdminLeaderboardQueryDto,
   AdminTransactionQueryDto,
@@ -105,6 +106,29 @@ export class AdminController {
   async listVerifications() {
     const users = await this.adminService.listVerifications();
     return users.map(({ password, ...rest }) => rest);
+  }
+
+  // ------------------------------------------------------------------
+  // Student Union verification
+  // ------------------------------------------------------------------
+
+  @Get('student-union')
+  @ApiOperation({ summary: 'List Student Union verification requests (admin)' })
+  @ApiResponse({ status: 200, description: 'Student Union requests queue', type: [User] })
+  async listStudentUnionRequests() {
+    const users = await this.adminService.listStudentUnionRequests();
+    return users.map(({ password, ...rest }) => rest);
+  }
+
+  @Patch('users/:id/student-union')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Approve or reject Student Union verification (admin)' })
+  @ApiResponse({ status: 200, description: 'Student Union status updated', type: User })
+  updateStudentUnion(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateStudentUnionDto,
+  ) {
+    return this.adminService.updateStudentUnion(id, dto);
   }
 
   @Patch('users/:id/verification')

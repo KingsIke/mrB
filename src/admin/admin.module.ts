@@ -16,6 +16,7 @@ import { Question } from '../department-war/entities/question.entity';
 import { Battle } from '../department-war/entities/battle.entity';
 import { DeptWarStats } from '../department-war/entities/dept-war-stats.entity';
 import { AuthModule } from '../auth/auth.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { AuthModule } from '../auth/auth.module';
       DeptWarStats,
     ]),
     AuthModule,
+    NotificationsModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],

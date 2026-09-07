@@ -11,7 +11,7 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { UserGender } from '../entities/user.entity';
+import { UserGender, ProgramType } from '../entities/user.entity';
 
 export class OnboardingStep1Dto {
   @ApiProperty({ description: 'First name', example: 'John' })
@@ -36,6 +36,10 @@ export class OnboardingStep1Dto {
 }
 
 export class OnboardingStep2Dto {
+  @ApiProperty({ description: 'Program track', enum: ProgramType, example: 'undergraduate' })
+  @IsEnum(ProgramType)
+  programType: ProgramType;
+
   @ApiProperty({ description: 'School ID (UUID)', example: '550e8400-e29b-41d4-a716-446655440000' })
   @IsUUID()
   schoolId: string;
@@ -79,6 +83,11 @@ export class OnboardingStep3Dto {
 }
 
 export class CompleteOnboardingDto {
+  @ApiPropertyOptional({ description: 'Program track', enum: ProgramType, example: 'undergraduate' })
+  @IsOptional()
+  @IsEnum(ProgramType)
+  programType?: ProgramType;
+
   @ApiProperty({ description: 'First name', example: 'John' })
   @IsString()
   @MinLength(1)

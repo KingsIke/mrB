@@ -25,6 +25,11 @@ export enum UserGender {
   PREFER_NOT_TO_SAY = 'prefer_not_to_say',
 }
 
+export enum ProgramType {
+  UNDERGRADUATE = 'undergraduate',
+  POSTGRADUATE = 'postgraduate',
+}
+
 export enum UserStatus {
   PENDING_VERIFICATION = 'pending_verification',
   PENDING_ONBOARDING = 'pending_onboarding',
@@ -115,6 +120,10 @@ export class User {
   @Column({ type: 'uuid', nullable: true })
   departmentId: string;
 
+  // Program track: 'undergraduate' | 'postgraduate'
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  programType: string;
+
   @Column({ type: 'varchar', length: 255, nullable: true })
   matricNumber: string;
 
@@ -126,6 +135,28 @@ export class User {
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   administrationLetterUrl: string;
+
+  // Rejection feedback for student verification
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  rejectionReason: string | null;
+
+  @Column({ type: 'boolean', default: false })
+  isStudentIdRejected: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  isAdmissionLetterRejected: boolean;
+
+  // === Student Union ===
+  // Grants access to create campus events once verified by an admin.
+  @Column({ type: 'boolean', default: false })
+  studentUnion: boolean;
+
+  // 'none' | 'pending' | 'verified' | 'rejected'
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  studentUnionStatus: string;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  studentUnionDocUrl: string;
 
   // === Terms ===
   @Column({ type: 'boolean', default: false })

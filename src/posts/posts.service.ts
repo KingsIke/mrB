@@ -156,6 +156,10 @@ export class PostsService {
       category: dto.category,
       feeling: dto.feeling,
       location: dto.location,
+      backgroundColor: dto.backgroundColor ?? null,
+      textAlign: dto.textAlign ?? 'center',
+      fontStyle: dto.fontStyle ?? 'classic',
+      fontSize: dto.fontSize ?? 'medium',
       media,
       tags,
     });

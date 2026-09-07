@@ -7,6 +7,56 @@
 // of Engineering, ...).
 // -----------------------------------------------------------------------------
 
+// ===================== GOU / MOUAU SPECIFIC DEPARTMENTS =====================
+
+const GOU_MED_HEALTH = [
+  "Medicine and Surgery - MBBS",
+  "Nursing Science",
+  "Medical Laboratory Science",
+  "Radiography",
+  "Physiotherapy",
+  "Public Health",
+];
+
+const GOU_BASIC_CLINICAL = [
+  "Anatomy",
+  "Physiology",
+  "Medical Biochemistry",
+  "Medical Microbiology",
+];
+
+const GOU_NASC = [
+  "Biological Sciences",
+  "Chemistry",
+  "Physics",
+  "Mathematics",
+  "Computer Science",
+  "Biochemistry",
+  "Microbiology",
+  "Statistics",
+];
+
+const GOU_HUM_SOC_MGT = [
+  "Accounting",
+  "Banking and Finance",
+  "Business Administration",
+  "Economics",
+  "Political Science",
+  "International Relations",
+  "Insurance",
+  "Sociology",
+  "Hotel Management and Tourism",
+  "Mass Communication",
+  "English and Literary Studies",
+  "History and International Studies",
+  "Theatre and Media Studies",
+  "Linguistics",
+  "French",
+  "Christian Religious Studies",
+  "Peace and Conflict Resolution",
+  "Law",
+];
+
 // ------------------------------- UNIVERSITY FACULTIES -------------------------------
 
 const ENG = [
@@ -624,13 +674,13 @@ export const DEPARTMENTS_BY_FACULTY: Record<string, string[]> = {
   "Faculty of Arts and Education": [...ARTS, ...EDU],
   "Faculty of Humanities": ARTS,
   "Faculty of Humanities and Social Sciences": [...ARTS, ...SOC],
-  "Faculty of Humanities, Social and Management Sciences": [...ARTS, ...SOC, ...MGT],
+  "Faculty of Humanities, Social and Management Sciences": [...GOU_HUM_SOC_MGT],
   "Faculty of Science": SCI,
   "Faculty of Sciences": SCI,
   "Faculty of Science and Education": [...SCI, ...EDU],
   "Faculty of Science and Technology": [...SCI, ...TECH],
   "Faculty of Natural Sciences": SCI,
-  "Faculty of Natural and Applied Sciences": SCI,
+  "Faculty of Natural and Applied Sciences": [...GOU_NASC],
   "Faculty of Pure and Applied Sciences": SCI,
   "Faculty of Applied Natural Sciences": SCI,
   "Faculty of Basic and Applied Sciences": SCI,
@@ -644,7 +694,6 @@ export const DEPARTMENTS_BY_FACULTY: Record<string, string[]> = {
   "Faculty of Technology": TECH,
   "Faculty of Environmental Technology": ENV,
   "Faculty of Earth and Mineral Sciences": GEOL,
-  "Faculty of Law": LAW,
   "Faculty of Social Sciences": SOC,
   "Faculty of Social and Management Sciences": [...SOC, ...MGT],
   "Faculty of Management and Social Sciences": [...MGT, ...SOC],
@@ -667,7 +716,8 @@ export const DEPARTMENTS_BY_FACULTY: Record<string, string[]> = {
   "Faculty of Clinical Sciences": CLS,
   "Faculty of Medical Sciences": MED,
   "Faculty of Medicine": MED,
-  "Faculty of Medicine and Health Sciences": MED,
+  "Faculty of Medicine and Health Sciences": [...GOU_MED_HEALTH],
+  "Faculty of Basic Clinical Sciences": [...GOU_BASIC_CLINICAL],
   "Faculty of Medical and Health Sciences": MED,
   "Faculty of Health Sciences": HLTH,
   "Faculty of Health Sciences and Technology": HLTH,
@@ -772,7 +822,8 @@ export const DEPARTMENTS_BY_FACULTY: Record<string, string[]> = {
   ],
   "College of Information and Communication Technology": COM,
 
-  // --- Polytechnic schools ---
+  
+// --- Polytechnic schools ---
   "School of Business and Management Studies": POLY_BMS,
   "School of Environmental Studies": POLY_ENV,
   "School of Communication and Information Technology": POLY_COMM,

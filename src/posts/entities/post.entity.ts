@@ -90,6 +90,18 @@ export class Post {
   @Column({ type: 'varchar', length: 255, nullable: true })
   location: string;
 
+  @Column({ type: 'varchar', length: 7, nullable: true })
+  backgroundColor: string | null;
+
+  @Column({ type: 'varchar', length: 10, default: 'center' })
+  textAlign: 'left' | 'center' | 'right';
+
+  @Column({ type: 'varchar', length: 20, default: 'classic' })
+  fontStyle: 'classic' | 'serif' | 'typewriter' | 'light' | 'strong';
+
+  @Column({ type: 'varchar', length: 10, default: 'medium' })
+  fontSize: 'small' | 'medium' | 'large';
+
   @Column({ type: 'uuid', nullable: true })
   schoolId: string;
 
