@@ -15,13 +15,16 @@ export class OtpService {
     private readonly otpRepository: Repository<OtpCode>,
     private readonly configService: ConfigService,
   ) {
+    const port = this.configService.get<number>('SMTP_PORT', 465);
+    const secure = this.configService.get<boolean>('SMTP_SECURE', port === 465);
+
     this.transporter = nodemailer.createTransport({
-      host: this.configService.get('SMTP_HOST', 'smtp.gmail.com'),
-      port: this.configService.get<number>('SMTP_PORT', 587),
-      secure: false,
+      host: this.configService.get('SMTP_HOST', 'smtp.zoho.com'),
+      port,
+      secure, // true for 465 (SSL), false for 587 (STARTTLS)
       auth: {
-        user: this.configService.get('SMTP_USER'),
-        pass: this.configService.get('SMTP_PASS'),
+        user: this.configService.get('SMTP_USER'), // Your Zoho email address (e.g., support@schoolsocial.app)
+        pass: this.configService.get('SMTP_PASS'), // Zoho account password or Application-Specific Password
       },
     });
   }
@@ -57,7 +60,7 @@ export class OtpService {
 
   // ========== REACTIVATION NOTIFICATION ==========
   async sendReactivationEmail(user: User): Promise<void> {
-    const from = this.configService.get('SMTP_FROM', 'noreply@schoolsocial.app');
+    const from = this.configService.get('SMTP_FROM', this.configService.get('SMTP_USER'));
     const displayName =
       `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'there';
 
@@ -133,7 +136,7 @@ export class OtpService {
     expiryMinutes: number, 
     purpose: OtpPurpose
   ): Promise<void> {
-    const from = this.configService.get('SMTP_FROM', 'noreply@schoolsocial.app');
+    const from = this.configService.get('SMTP_FROM', this.configService.get('SMTP_USER'));
     
     // Customize email content based on purpose
     let subject = 'Verify Your Email - School Social';
