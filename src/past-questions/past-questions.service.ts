@@ -74,7 +74,7 @@ export class PastQuestionsService {
 
     const pq = this.pqRepo.create({
       level: dto.level,
-      // courseCode: dto.courseCode, 
+      courseCode: dto.courseCode, 
       course: dto.course,
       session: dto.session,
       semester: dto.semester,

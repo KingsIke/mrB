@@ -113,8 +113,8 @@ export class PostsController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a post by ID' })
-  async findById(@Param('id') id: string) {
-    return this.postsService.findById(id);
+  async findById(@CurrentUser('userId') userId: string, @Param('id') id: string) {
+    return this.postsService.findById(id, userId);
   }
 
   @Patch(':id')

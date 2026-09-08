@@ -30,13 +30,11 @@ export class ListPastQuestionsDto {
   @MaxLength(255)
   course?: string;
 
-
-  
-  // @ApiPropertyOptional({ description: 'Filter by course code/name (partial match)' })
-  // @IsOptional()
-  // @IsString()
-  // @MaxLength(255)
-  // courseCode?: string;
+  @ApiPropertyOptional({ description: 'Filter by course code/name (partial match)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  courseCode?: string;
 
   @ApiPropertyOptional({ description: 'Filter by academic session (e.g. 2023/2024)' })
   @IsOptional()

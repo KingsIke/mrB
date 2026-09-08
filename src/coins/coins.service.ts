@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import * as crypto from 'crypto';
@@ -9,6 +9,7 @@ import { CoinPurchase, CoinPurchaseStatus } from './entities/coin-purchase.entit
 import { PurchaseCoinsDto, ResolveAccountDto } from './dto/purchase-coins.dto';
 import { PaystackClient } from './paystack.client';
 import { UsersService } from '../users/users.service';
+import { OtpService } from '../otp/otp.service';
 import {
   CursorPaginated,
   CursorPaginationDto,
@@ -20,6 +21,8 @@ export const COIN_RATE_NGN = 10; // 1 Coin = 10 NGN
 
 @Injectable()
 export class CoinsService {
+  private readonly logger = new Logger(CoinsService.name);
+
   constructor(
     @InjectRepository(CoinBalance)
     private readonly coinBalanceRepository: Repository<CoinBalance>,
@@ -29,6 +32,7 @@ export class CoinsService {
     private readonly coinPurchaseRepository: Repository<CoinPurchase>,
     private readonly paystackClient: PaystackClient,
     private readonly usersService: UsersService,
+    private readonly otpService: OtpService,
     private readonly configService: ConfigService,
     private readonly dataSource: DataSource,
   ) {}
@@ -184,7 +188,7 @@ export class CoinsService {
       throw new BadRequestException('Amount must be greater than zero');
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const balanceRepository = manager.getRepository(CoinBalance);
       const transactionRepository = manager.getRepository(CoinTransaction);
 
@@ -214,6 +218,33 @@ export class CoinsService {
 
       return { success: true, reference };
     });
+
+    // Notify the admin team (to process the payout) and the user (receipt).
+    // Best-effort — email failures must never fail the withdrawal request.
+    try {
+      const user = await this.usersService.findById(userId);
+      if (user) {
+        try {
+          await this.otpService.notifyAdminsOfWithdrawal(
+            user,
+            amountNgn,
+            bankDetails,
+            result.reference,
+          );
+        } catch (err) {
+          this.logger.error('Failed to notify admins of withdrawal', err);
+        }
+        try {
+          await this.otpService.notifyUserOfWithdrawal(user, amountNgn, result.reference);
+        } catch (err) {
+          this.logger.error('Failed to send withdrawal receipt to user', err);
+        }
+      }
+    } catch (err) {
+      this.logger.error('Failed to load user for withdrawal notification', err);
+    }
+
+    return result;
   }
 
   async resolveAccountName(dto: ResolveAccountDto): Promise<{ accountName: string }> {

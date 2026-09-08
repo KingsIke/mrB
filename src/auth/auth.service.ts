@@ -597,6 +597,18 @@ export class AuthService {
         this.logger.error("autoJoinSystemGroups failed", err);
       }
 
+      // Notify the admin team (ADMIN_EMAILS) that a new user completed
+      // onboarding and submitted verification documents, so an admin can
+      // review and verify the account. Best-effort — a mail failure must
+      // never roll back the completed onboarding.
+      try {
+        if (updatedUser.schoolIdCardUrl || updatedUser.administrationLetterUrl) {
+          await this.otpService.notifyAdminsOfNewRegistration(updatedUser);
+        }
+      } catch (mailErr) {
+        this.logger.error('Failed to notify admins of new registration', mailErr);
+      }
+
       const { password, ...userWithoutPassword } = updatedUser;
 
       return {
@@ -1113,6 +1125,17 @@ export class AuthService {
 
     const updatedUser = await this.usersService.update(userId, updateData);
 
+    // Notify the admin team (ADMIN_EMAILS) when new verification documents
+    // are uploaded for review. Best-effort — a mail failure must never
+    // fail the submission. Skip if only rejection data changed (no new files).
+    if (files?.schoolIdCard || files?.administrationLetter) {
+      try {
+        await this.otpService.notifyAdminsOfVerificationDocuments(updatedUser);
+      } catch (mailErr) {
+        this.logger.error('Failed to notify admins of verification documents', mailErr);
+      }
+    }
+
     const { password, ...userWithoutPassword } = updatedUser;
 
     return {
@@ -1155,6 +1178,15 @@ export class AuthService {
       studentUnionDocUrl: result.secure_url,
       studentUnionStatus: "pending",
     });
+
+    // Notify the admin team (ADMIN_EMAILS) so an admin can review the
+    // submitted Student Union document. Best-effort — a mail failure must
+    // never fail the submission itself.
+    try {
+      await this.otpService.notifyAdminsOfStudentUnionSubmission(updatedUser);
+    } catch (mailErr) {
+      this.logger.error('Failed to notify admins of student union submission', mailErr);
+    }
 
     const { password, ...userWithoutPassword } = updatedUser;
 

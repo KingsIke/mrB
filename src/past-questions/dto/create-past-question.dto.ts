@@ -21,9 +21,9 @@ export class CreatePastQuestionDto {
   course: string;
 
 
-  //   @IsNotEmpty()
-  // @IsString()
-  // courseCode: string;
+    @IsNotEmpty()
+  @IsString()
+  courseCode: string;
 
   @IsNotEmpty()
   @IsString()

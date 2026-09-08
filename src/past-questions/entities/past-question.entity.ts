@@ -19,8 +19,8 @@ export class PastQuestion {
   @Column({ type: 'varchar', length: 255 })
   course: string;
 
-  //   @Column({ type: 'varchar', length: 255 })
-  // courseCode: string;
+  @Column({ type: 'varchar', length: 255, default: '' })
+  courseCode: string;
 
   @Column({ type: 'varchar', length: 50 })
   session: string;

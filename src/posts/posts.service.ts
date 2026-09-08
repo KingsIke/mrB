@@ -293,8 +293,12 @@ private async getPostOrThrow(id: string, currentUserId?: string): Promise<Post> 
 
   // Populate contextual metadata if currentUserId is provided
   if (currentUserId) {
-    const [like, isFollowingSet, userLevelStats] = await Promise.all([
+    const [like, reshare, isFollowingSet, userLevelStats] = await Promise.all([
       this.postLikeRepository.findOne({
+        where: { userId: currentUserId, postId: post.id },
+        select: ["postId"],
+      }),
+      this.reshareRepository.findOne({
         where: { userId: currentUserId, postId: post.id },
         select: ["postId"],
       }),
@@ -307,6 +311,7 @@ private async getPostOrThrow(id: string, currentUserId?: string): Promise<Post> 
     ]);
 
     (post as any).isLiked = !!like;
+    (post as any).isReshared = !!reshare;
 
     if (post.user) {
       (post.user as any).isFollowing = isFollowingSet.has(post.user.id);
@@ -522,7 +527,9 @@ private async getPostOrThrow(id: string, currentUserId?: string): Promise<Post> 
       .leftJoinAndSelect("reshare.post", "post")
       .leftJoinAndSelect("post.media", "media")
       .leftJoinAndSelect("post.user", "user")
-      .where("reshare.userId = :userId", { userId });
+      .where("reshare.userId = :userId", { userId })
+      .andWhere("post.status = :status", { status: PostStatus.PUBLISHED })
+      .andWhere("post.isHidden = false");
 
     if (pagination.cursor) {
       const { createdAt, id } = decodeCursor(pagination.cursor);
@@ -639,6 +646,18 @@ async getFeed(
       });
       const likedPostIds = new Set(userLikes.map((like) => like.postId));
 
+      // 1b. Batch check reshares
+      const userReshares = await this.reshareRepository.find({
+        where: {
+          userId,
+          postId: In(postIds),
+        },
+        select: ["postId"],
+      });
+      const resharedPostIds = new Set(
+        userReshares.map((reshare) => reshare.postId),
+      );
+
       // 2. Extract author IDs
       const userIds = [
         ...new Set(items.map((post) => post.user?.id).filter(Boolean)),
@@ -661,9 +680,10 @@ async getFeed(
         levelMapArray.map((x) => [x.id, x.level]),
       );
 
-      // 4. Attach computed properties (`isLiked`, `isFollowing`, & `appLevel`)
+      // 4. Attach computed properties (`isLiked`, `isReshared`, `isFollowing`, & `appLevel`)
       items.forEach((post) => {
         (post as any).isLiked = likedPostIds.has(post.id);
+        (post as any).isReshared = resharedPostIds.has(post.id);
 
         if (post.user) {
           const isFollowingAuthor = followingIdsSet.has(post.user.id);
