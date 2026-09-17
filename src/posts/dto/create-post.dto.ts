@@ -77,4 +77,14 @@ export class CreatePostDto {
   @IsOptional()
   @IsIn(['small', 'medium', 'large'])
   fontSize?: 'small' | 'medium' | 'large';
+
+  @ApiPropertyOptional({
+    description:
+      'JSON-stringified array of text-post slides (a swipeable carousel of ' +
+      'text cards, same idea as multiple media files). Each slide has its ' +
+      'own text/backgroundColor/textAlign/fontStyle/fontSize.',
+  })
+  @IsOptional()
+  @IsString()
+  textSlides?: string;
 }

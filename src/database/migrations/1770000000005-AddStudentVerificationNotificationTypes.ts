@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddStudentVerificationNotificationTypes1770000005 implements MigrationInterface {
-  name = 'AddStudentVerificationNotificationTypes1770000005';
+export class AddStudentVerificationNotificationTypes1770000000005 implements MigrationInterface {
+  name = 'AddStudentVerificationNotificationTypes1770000000005';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(

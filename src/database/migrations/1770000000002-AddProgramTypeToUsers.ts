@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddProgramTypeToUsers1770000002 implements MigrationInterface {
-  name = 'AddProgramTypeToUsers1770000002';
+export class AddProgramTypeToUsers1770000000002 implements MigrationInterface {
+  name = 'AddProgramTypeToUsers1770000000002';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(

@@ -46,6 +46,16 @@ export enum PostCategory {
   OTHER = 'other',
 }
 
+/** One card of a text post's carousel — mirrors the client's TextPostSlide. */
+export interface TextPostSlide {
+  id: string;
+  text: string;
+  backgroundColor: string;
+  textAlign: 'left' | 'center' | 'right';
+  fontStyle: 'classic' | 'serif' | 'typewriter' | 'light' | 'strong';
+  fontSize: 'small' | 'medium' | 'large';
+}
+
 @Entity('posts')
 @Index(['schoolId', 'createdAt'])
 @Index(['userId', 'createdAt'])
@@ -101,6 +111,15 @@ export class Post {
 
   @Column({ type: 'varchar', length: 10, default: 'medium' })
   fontSize: 'small' | 'medium' | 'large';
+
+  /**
+   * Optional swipeable carousel of text cards (same idea as multiple media
+   * items on a media post). Each entry mirrors the singular backgroundColor/
+   * textAlign/fontStyle/fontSize fields above, which stay populated from
+   * slide[0] for clients that don't render the carousel.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  textSlides: TextPostSlide[] | null;
 
   @Column({ type: 'uuid', nullable: true })
   schoolId: string;

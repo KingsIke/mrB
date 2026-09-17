@@ -3,7 +3,7 @@ import { UploadApiErrorResponse, UploadApiResponse, v2 } from 'cloudinary';
 import * as streamifier from 'streamifier';
 import { CLOUDINARY } from './cloudinary.provider';
 
-export type CloudinaryResourceType = 'image' | 'video' | 'auto';
+export type CloudinaryResourceType = 'image' | 'video' | 'raw' | 'auto';
 
 @Injectable()
 export class CloudinaryService {

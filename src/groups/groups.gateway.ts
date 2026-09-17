@@ -270,6 +270,17 @@ export class GroupsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(`user_${userId}`).emit(event, payload);
   }
 
+  /**
+   * True app-wide presence check: this namespace is connected for the whole
+   * session (mounted once in the client's root layout), unlike per-feature
+   * gateways that only connect while a specific screen is mounted. Other
+   * features (e.g. department war matchmaking) should use this instead of
+   * their own gateway's narrower connection tracking.
+   */
+  isUserOnline(userId: string): boolean {
+    return this.connectedUserIds.has(userId);
+  }
+
   private removeUserFromRoomPresence(groupId: string, userId: string, client: Socket) {
     const roomName = `group_${groupId}`;
     const usersSet = this.roomOnlineUsers.get(groupId);

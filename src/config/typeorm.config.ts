@@ -39,6 +39,30 @@ import { MessageAttachment } from '../groups/entities/message-attachment.entity'
 import { MessageReaction } from '../groups/entities/message-reaction.entity';
 import { CallHistory } from '../calls/entities/call-history.entity';
 import { Note } from '../notes/entities/note.entity';
+import { HostelListing } from '../hostels/entities/hostel-listing.entity';
+import { HostelLike } from '../hostels/entities/hostel-like.entity';
+import { MarketplaceItem } from '../marketplace/entities/marketplace-item.entity';
+import { MarketplaceLike } from '../marketplace/entities/marketplace-like.entity';
+import { ChatMessage } from '../ai/entities/chat-message.entity';
+import { ChatSession } from '../ai/entities/chat-session.entity';
+import { Event } from '../events/entities/event.entity';
+import { SupportRequest } from '../support/entities/support-request.entity';
+import { Job } from '../jobs/entities/job.entity';
+import { JobApplication } from '../jobs/entities/job-application.entity';
+import { ProjectTopic } from '../project-topics/entities/project-topic.entity';
+import { ProjectTopicVote } from '../project-topics/entities/project-topic-vote.entity';
+import { Question } from '../department-war/entities/question.entity';
+import { BattleAnswer } from '../department-war/entities/battle-answer.entity';
+import { DeptWarStats } from '../department-war/entities/dept-war-stats.entity';
+import { UserWarStats } from '../department-war/entities/user-war-stats.entity';
+import { Battle } from '../department-war/entities/battle.entity';
+import { TreasureHunt } from '../treasure-hunt/entities/treasure-hunt.entity';
+import { TreasureClaim } from '../treasure-hunt/entities/treasure-claim.entity';
+import { CampusMaterial } from '../materials/entities/campus-material.entity';
+import { CoinBattle } from '../coin-battle/entities/coin-battle.entity';
+import { CoinBattleAnswer } from '../coin-battle/entities/coin-battle-answer.entity';
+import { AppDownloadClick } from '../admin/entities/app-download-click.entity';
+import { PastQuestion } from '../past-questions/entities/past-question.entity';
 
 config();
 
@@ -90,6 +114,30 @@ export default new DataSource({
     MessageAttachment,
     MessageReaction,
     CallHistory,
+    HostelListing,
+    HostelLike,
+    MarketplaceItem,
+    MarketplaceLike,
+    ChatMessage,
+    ChatSession,
+    Event,
+    SupportRequest,
+    Job,
+    JobApplication,
+    ProjectTopic,
+    ProjectTopicVote,
+    Question,
+    BattleAnswer,
+    DeptWarStats,
+    UserWarStats,
+    Battle,
+    TreasureHunt,
+    TreasureClaim,
+    CampusMaterial,
+    CoinBattle,
+    CoinBattleAnswer,
+    AppDownloadClick,
+    PastQuestion,
   ],
   migrations: ['src/database/migrations/*{.ts,.js}'],
   synchronize: false,

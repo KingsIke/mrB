@@ -253,11 +253,11 @@ export class AuthController {
           fileSize: 5 * 1024 * 1024, // 5MB
         },
         fileFilter: (req, file, callback) => {
-          const allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
+          const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
           if (allowedMimes.includes(file.mimetype)) {
             callback(null, true);
           } else {
-            callback(new Error('Only image files (JPEG, PNG, WebP) are allowed'), false);
+            callback(new Error('Only image files (JPEG, PNG, WebP) or PDF are allowed'), false);
           }
         },
       },

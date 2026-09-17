@@ -540,21 +540,23 @@ export class AuthService {
       profilePictureUrl = result.secure_url;
     }
     if (files?.schoolIdCard) {
+      const isPdf = files.schoolIdCard.mimetype === 'application/pdf';
       const result = await this.cloudinaryService.uploadFile(
         files.schoolIdCard,
         {
           folder: "school-social/school-id-cards",
-          resourceType: "image",
+          resourceType: isPdf ? 'raw' : 'image',
         },
       );
       schoolIdCardUrl = result.secure_url;
     }
     if (files?.administrationLetter) {
+      const isPdf = files.administrationLetter.mimetype === 'application/pdf';
       const result = await this.cloudinaryService.uploadFile(
         files.administrationLetter,
         {
           folder: "school-social/administration-letters",
-          resourceType: "image",
+          resourceType: isPdf ? 'raw' : 'image',
         },
       );
       administrationLetterUrl = result.secure_url;

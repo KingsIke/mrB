@@ -22,6 +22,7 @@ import {
   MatchmakingDto,
 } from './dto/war.dto';
 import { DepartmentWarGateway } from './department-war.gateway';
+import { GroupsGateway } from '../groups/groups.gateway';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType, NotificationTargetType } from '../notifications/entities/notification.entity';
 
@@ -47,6 +48,7 @@ export class DepartmentWarService {
     @InjectRepository(UserWarStats) private userStatsRepo: Repository<UserWarStats>,
     @InjectRepository(User) private userRepo: Repository<User>,
     private gateway: DepartmentWarGateway,
+    private groupsGateway: GroupsGateway,
     private notificationsService: NotificationsService,
   ) {
     // Avoids a circular import: the gateway asks us to build resume snapshots.
@@ -294,9 +296,16 @@ export class DepartmentWarService {
 
     const candidates = await candidatesQuery.getMany();
 
-    // Only show users who are actually online and reachable right now —
-    // no point letting the requester pick someone who can't respond.
-    const onlineCandidates = candidates.filter((c) => this.gateway.isUserOnline(c.id));
+    // Only show users who are actually online and reachable right now — no
+    // point letting the requester pick someone who can't respond. Checked
+    // against the app-wide "/groups" presence (connected for the user's
+    // whole session, from the client's root layout) rather than only the
+    // "/department-war" gateway's own connection tracking, which is scoped
+    // to whichever screen mounted `useWarSocket` and is disconnected the
+    // instant the user navigates off a war screen — nearly always empty.
+    const onlineCandidates = candidates.filter(
+      (c) => this.groupsGateway.isUserOnline(c.id) || this.gateway.isUserOnline(c.id),
+    );
 
     return Promise.all(
       onlineCandidates.map(async (c) => {
@@ -356,7 +365,10 @@ export class DepartmentWarService {
       if (busyUserIds.has(dto.opponentId)) {
         throw new ConflictException('That user just entered another battle. Pick someone else.');
       }
-      if (!this.gateway.isUserOnline(dto.opponentId)) {
+      if (
+        !this.groupsGateway.isUserOnline(dto.opponentId) &&
+        !this.gateway.isUserOnline(dto.opponentId)
+      ) {
         throw new BadRequestException('That user is no longer online');
       }
       const picked = await this.userRepo.findOne({ where: { id: dto.opponentId } });
@@ -383,7 +395,9 @@ export class DepartmentWarService {
       }
 
       const allCandidates = await candidatesQuery.getMany();
-      const candidates = allCandidates.filter((c) => this.gateway.isUserOnline(c.id));
+      const candidates = allCandidates.filter(
+        (c) => this.groupsGateway.isUserOnline(c.id) || this.gateway.isUserOnline(c.id),
+      );
 
       if (candidates.length === 0) {
         throw new NotFoundException('No opponents available right now. Try again in a minute.');

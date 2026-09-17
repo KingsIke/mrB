@@ -11,6 +11,7 @@ import {
   PostStatus,
   PostType,
   CommentPermission,
+  TextPostSlide,
 } from "./entities/post.entity";
 import { PostMedia, PostMediaType } from "./entities/post-media.entity";
 import { PostTag } from "./entities/post-tag.entity";
@@ -78,6 +79,27 @@ export class PostsService {
     return [...new Set(matches)];
   }
 
+  /**
+   * Parses the client's JSON-stringified text-slide carousel. Malformed or
+   * missing input just means no carousel — the singular backgroundColor/
+   * textAlign/fontStyle/fontSize fields (mirroring slide[0]) still carry the
+   * post, so this never blocks post creation.
+   */
+  private parseTextSlides(raw?: string): TextPostSlide[] | null {
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed) || parsed.length === 0) return null;
+      const slides = parsed.filter(
+        (slide): slide is TextPostSlide =>
+          slide && typeof slide === 'object' && typeof slide.text === 'string',
+      );
+      return slides.length > 0 ? slides : null;
+    } catch {
+      return null;
+    }
+  }
+
   private async getCommentOrThrow(id: string): Promise<PostComment> {
     const comment = await this.commentRepository.findOne({ where: { id } });
     if (!comment) {
@@ -143,6 +165,8 @@ export class PostsService {
       new Set([...explicitHashtags, ...extractedHashtags]),
     );
 
+    const textSlides = this.parseTextSlides(dto.textSlides);
+
     const post = this.postRepository.create({
       userId,
       schoolId: user.schoolId,
@@ -160,6 +184,7 @@ export class PostsService {
       textAlign: dto.textAlign ?? 'center',
       fontStyle: dto.fontStyle ?? 'classic',
       fontSize: dto.fontSize ?? 'medium',
+      textSlides,
       media,
       tags,
     });

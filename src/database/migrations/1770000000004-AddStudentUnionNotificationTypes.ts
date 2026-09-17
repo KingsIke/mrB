@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddStudentUnionNotificationTypes1770000004 implements MigrationInterface {
-  name = 'AddStudentUnionNotificationTypes1770000004';
+export class AddStudentUnionNotificationTypes1770000000004 implements MigrationInterface {
+  name = 'AddStudentUnionNotificationTypes1770000000004';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(

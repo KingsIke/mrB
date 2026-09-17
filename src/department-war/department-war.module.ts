@@ -12,11 +12,13 @@ import { DeptWarStats } from './entities/dept-war-stats.entity';
 import { UserWarStats } from './entities/user-war-stats.entity';
 import { User } from '../users/entities/user.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { GroupsModule } from '../groups/groups.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Question, Battle, BattleAnswer, DeptWarStats, UserWarStats, User]),
     NotificationsModule,
+    GroupsModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
