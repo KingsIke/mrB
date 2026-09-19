@@ -101,6 +101,14 @@ export class NotificationsService {
         return `Your student identity is verified! Your verified badge is now active.`;
       case NotificationType.STUDENT_VERIFICATION_REJECTED:
         return `Your verification documents were not approved. Please review and resubmit.`;
+      case NotificationType.MARKETPLACE_ITEM_APPROVED:
+        return `Your marketplace listing was approved and is now live!`;
+      case NotificationType.MARKETPLACE_ITEM_REJECTED:
+        return `Your marketplace listing was not approved.`;
+      case NotificationType.HOSTEL_APPROVED:
+        return `Your hostel listing was approved and is now live!`;
+      case NotificationType.HOSTEL_REJECTED:
+        return `Your hostel listing was not approved.`;
       default:
         return `${actorName} interacted with your content`;
     }

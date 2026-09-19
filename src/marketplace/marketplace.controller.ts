@@ -37,6 +37,44 @@ async adminListAll() {
   return this.marketplaceService.adminListAll();
 }
 
+@Get('admin/pending')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'List marketplace items awaiting moderation (admin)' })
+async adminListPending() {
+  return this.marketplaceService.adminListPending();
+}
+
+// NOTE: the bulk routes below (admin/approve, admin/reject) must stay
+// declared before `@Patch('admin/:id')` (adminUpdate) — otherwise Nest
+// would match them as `:id = "approve"` / `:id = "reject"` instead.
+@Patch('admin/approve')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Approve multiple marketplace items (admin)' })
+async adminApproveMany(@Body() body: { ids: string[] }) {
+  return this.marketplaceService.approveMany(body.ids);
+}
+
+@Patch('admin/reject')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Reject multiple marketplace items (admin)' })
+async adminRejectMany(@Body() body: { ids: string[]; reason?: string }) {
+  return this.marketplaceService.rejectMany(body.ids, body.reason);
+}
+
+@Patch('admin/:id/approve')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Approve a marketplace item, making it publicly visible (admin)' })
+async adminApprove(@Param('id') id: string) {
+  return this.marketplaceService.approve(id);
+}
+
+@Patch('admin/:id/reject')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Reject a marketplace item (admin)' })
+async adminReject(@Param('id') id: string, @Body('reason') reason?: string) {
+  return this.marketplaceService.reject(id, reason);
+}
+
 @Post('admin')
 @UseGuards(AdminGuard)
 @ApiOperation({ summary: 'Create marketplace item (admin)' })
@@ -93,6 +131,12 @@ async adminBulkDelete(@Body() body: { ids: string[] }) {
     return this.marketplaceService.create(userId, dto, files);
   }
 
+  @Get('my-listings')
+  @ApiOperation({ summary: 'List my own marketplace items, regardless of moderation status' })
+  async myListings(@CurrentUser('userId') userId: string) {
+    return this.marketplaceService.myListings(userId);
+  }
+
 @Get()
 @ApiOperation({ summary: 'List all marketplace items with pagination, category filter, and search' })
 @ApiQuery({ name: 'page', required: false, type: Number, example: 1, description: 'Page number' })
@@ -118,8 +162,8 @@ async findAll(
 }
   @Get(':id')
   @ApiOperation({ summary: 'Get a marketplace item by ID' })
-  async findOne(@Param('id') id: string) {
-    return this.marketplaceService.findOne(id);
+  async findOne(@CurrentUser('userId') userId: string, @Param('id') id: string) {
+    return this.marketplaceService.findOne(id, userId);
   }
 
   @Patch(':id')

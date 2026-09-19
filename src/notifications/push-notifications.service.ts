@@ -135,6 +135,22 @@ const NOTIFICATION_MESSAGES: Record<
     title: '⚠️ Student Verification',
     body: () => 'Your verification documents were not approved. Please review and resubmit.',
   },
+  [NotificationType.MARKETPLACE_ITEM_APPROVED]: {
+    title: '✅ Listing Approved',
+    body: () => 'Your marketplace listing was approved and is now live!',
+  },
+  [NotificationType.MARKETPLACE_ITEM_REJECTED]: {
+    title: '❌ Listing Not Approved',
+    body: (_actorName, extra) => `Your marketplace listing was not approved.${extra ? ` Reason: ${extra}` : ''}`,
+  },
+  [NotificationType.HOSTEL_APPROVED]: {
+    title: '✅ Listing Approved',
+    body: () => 'Your hostel listing was approved and is now live!',
+  },
+  [NotificationType.HOSTEL_REJECTED]: {
+    title: '❌ Listing Not Approved',
+    body: (_actorName, extra) => `Your hostel listing was not approved.${extra ? ` Reason: ${extra}` : ''}`,
+  },
 };
 
 const ANDROID_CHANNEL_ID: Record<string, string> = {
@@ -178,6 +194,10 @@ const CHANNEL_MAP: Record<NotificationType, string> = {
   [NotificationType.STUDENT_UNION_REJECTED]: 'system',
   [NotificationType.STUDENT_VERIFICATION_APPROVED]: 'system',
   [NotificationType.STUDENT_VERIFICATION_REJECTED]: 'system',
+  [NotificationType.MARKETPLACE_ITEM_APPROVED]: 'system',
+  [NotificationType.MARKETPLACE_ITEM_REJECTED]: 'system',
+  [NotificationType.HOSTEL_APPROVED]: 'system',
+  [NotificationType.HOSTEL_REJECTED]: 'system',
 };
 
 /** Check if a token is an Expo push token */

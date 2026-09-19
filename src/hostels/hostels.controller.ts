@@ -36,6 +36,44 @@ async adminListAll() {
   return this.hostelsService.adminListAll();
 }
 
+@Get('admin/pending')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'List hostel listings awaiting moderation (admin)' })
+async adminListPending() {
+  return this.hostelsService.adminListPending();
+}
+
+// NOTE: the bulk routes below (admin/approve, admin/reject) must stay
+// declared before `@Patch('admin/:id')` (adminUpdate) — otherwise Nest
+// would match them as `:id = "approve"` / `:id = "reject"` instead.
+@Patch('admin/approve')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Approve multiple hostel listings (admin)' })
+async adminApproveMany(@Body() body: { ids: string[] }) {
+  return this.hostelsService.approveMany(body.ids);
+}
+
+@Patch('admin/reject')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Reject multiple hostel listings (admin)' })
+async adminRejectMany(@Body() body: { ids: string[]; reason?: string }) {
+  return this.hostelsService.rejectMany(body.ids, body.reason);
+}
+
+@Patch('admin/:id/approve')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Approve a hostel listing, making it publicly visible (admin)' })
+async adminApprove(@Param('id') id: string) {
+  return this.hostelsService.approve(id);
+}
+
+@Patch('admin/:id/reject')
+@UseGuards(AdminGuard)
+@ApiOperation({ summary: 'Reject a hostel listing (admin)' })
+async adminReject(@Param('id') id: string, @Body('reason') reason?: string) {
+  return this.hostelsService.reject(id, reason);
+}
+
 @Post('admin')
 @UseGuards(AdminGuard)
 @ApiOperation({ summary: 'Create hostel listing (admin)' })
@@ -92,6 +130,12 @@ async adminBulkDelete(@Body() body: { ids: string[] }) {
     return this.hostelsService.create(userId, dto, files);
   }
 
+  @Get('my-listings')
+  @ApiOperation({ summary: 'List my own hostel listings, regardless of moderation status' })
+  async myListings(@CurrentUser('userId') userId: string) {
+    return this.hostelsService.myListings(userId);
+  }
+
   @Get()
   @ApiOperation({ summary: 'List all hostel listings for the current school' })
   async findAll(@CurrentUser('userId') userId: string) {
@@ -101,8 +145,8 @@ async adminBulkDelete(@Body() body: { ids: string[] }) {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a hostel listing by ID' })
-  async findOne(@Param('id') id: string) {
-    return this.hostelsService.findOne(id);
+  async findOne(@CurrentUser('userId') userId: string, @Param('id') id: string) {
+    return this.hostelsService.findOne(id, userId);
   }
 
   @Patch(':id')

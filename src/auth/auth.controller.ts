@@ -32,7 +32,7 @@ import { GoogleLoginDto } from './dto/google-login.dto';
 import { Verify2faDto } from '../users/dto/verify-2fa.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
-import { memoryStorage } from 'multer';
+import { documentUploadOptions } from '../common/multer/document-upload.config';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -247,20 +247,7 @@ export class AuthController {
         { name: 'schoolIdCard', maxCount: 1 },
         { name: 'administrationLetter', maxCount: 1 },
       ],
-      {
-        storage: memoryStorage(),
-        limits: {
-          fileSize: 5 * 1024 * 1024, // 5MB
-        },
-        fileFilter: (req, file, callback) => {
-          const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-          if (allowedMimes.includes(file.mimetype)) {
-            callback(null, true);
-          } else {
-            callback(new Error('Only image files (JPEG, PNG, WebP) or PDF are allowed'), false);
-          }
-        },
-      },
+      documentUploadOptions({ allowPdf: true }),
     ),
   )
   @ApiBearerAuth()
@@ -293,18 +280,7 @@ export class AuthController {
         { name: 'schoolIdCard', maxCount: 1 },
         { name: 'administrationLetter', maxCount: 1 },
       ],
-      {
-        storage: memoryStorage(),
-        limits: { fileSize: 5 * 1024 * 1024 },
-        fileFilter: (req, file, callback) => {
-          const allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
-          if (allowedMimes.includes(file.mimetype)) {
-            callback(null, true);
-          } else {
-            callback(new Error('Only image files (JPEG, PNG, WebP) are allowed'), false);
-          }
-        },
-      },
+      documentUploadOptions(),
     ),
   )
   @ApiBearerAuth()
@@ -329,18 +305,7 @@ export class AuthController {
   @Post('student-union/verification')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(
-    FileInterceptor('document', {
-      storage: memoryStorage(),
-      limits: { fileSize: 5 * 1024 * 1024 },
-      fileFilter: (req, file, callback) => {
-        const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-        if (allowedMimes.includes(file.mimetype)) {
-          callback(null, true);
-        } else {
-          callback(new Error('Only images (JPEG, PNG, WebP) or PDF files are allowed'), false);
-        }
-      },
-    }),
+    FileInterceptor('document', documentUploadOptions({ allowPdf: true })),
   )
   @ApiBearerAuth()
   @ApiConsumes('multipart/form-data')

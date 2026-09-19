@@ -3,11 +3,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateHostelDto } from './dto/create-hostel.dto';
 import { UpdateHostelDto } from './dto/update-hostel.dto';
-import { HostelListing, HostelStatus } from './entities/hostel-listing.entity';
+import { HostelListing, HostelStatus, ModerationStatus } from './entities/hostel-listing.entity';
 import { HostelLike } from './entities/hostel-like.entity';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { User } from '../users/entities/user.entity';
 import { NotificationsService } from '../notifications/notifications.service';
+import { OtpService } from '../otp/otp.service';
 import {
   NotificationTargetType,
   NotificationType,
@@ -24,6 +25,7 @@ export class HostelsService {
     private readonly userRepository: Repository<User>,
     private readonly cloudinaryService: CloudinaryService,
     private readonly notificationsService: NotificationsService,
+    private readonly otpService: OtpService,
   ) {}
 
   async create(
@@ -43,33 +45,41 @@ export class HostelsService {
       seller: { id: userId },
       school: { id: uploader.schoolId },
       imageUrls: [...(dto.imageUrls || []), ...imageUrls],
+      moderationStatus: ModerationStatus.PENDING,
     });
+    // Listings start PENDING and are invisible to everyone but the seller
+    // until an admin approves them — schoolmates are only notified once
+    // that happens (see `approve()`).
     const saved = await this.hostelRepository.save(hostel);
-
-    // Notify all schoolmates about the new hostel listing
-    try {
-      await this.notificationsService.notifySchoolmates(
-        userId,
-        NotificationType.HOSTEL_LISTED,
-        NotificationTargetType.HOSTEL,
-        saved.id,
-      );
-    } catch {
-      // best-effort — listing creation should not fail due to notification errors
-    }
 
     return saved;
   }
 
   async findAll(schoolId?: string): Promise<HostelListing[]> {
+    // Closed (taken/unavailable) listings shouldn't show up in the public
+    // browse feed — the seller closed it for a reason.
+    const baseWhere: any = {
+      moderationStatus: ModerationStatus.APPROVED,
+      status: HostelStatus.AVAILABLE,
+    };
+    if (schoolId) {
+      baseWhere.schoolId = schoolId;
+    }
+
     return this.hostelRepository.find({
-      where: schoolId ? { schoolId } : {},
+      where: baseWhere,
       order: { createdAt: 'DESC' },
       relations: ['seller', 'likes'],
     });
   }
 
-  async findOne(id: string): Promise<HostelListing> {
+  /**
+   * @param viewerId When passed (public-facing lookups), a listing that
+   * isn't APPROVED yet is hidden from everyone except its own seller.
+   * Omitted for internal calls (update, remove, admin tools, etc.) which
+   * already do their own authorization.
+   */
+  async findOne(id: string, viewerId?: string): Promise<HostelListing> {
     const hostel = await this.hostelRepository.findOne({
       where: { id },
       relations: ['seller', 'likes'],
@@ -79,7 +89,24 @@ export class HostelsService {
       throw new NotFoundException(`Hostel listing with ID "${id}" not found`);
     }
 
+    if (
+      viewerId !== undefined &&
+      hostel.moderationStatus !== ModerationStatus.APPROVED &&
+      hostel.sellerId !== viewerId
+    ) {
+      throw new NotFoundException(`Hostel listing with ID "${id}" not found`);
+    }
+
     return hostel;
+  }
+
+  /** All of the current user's own listings, regardless of moderation status. */
+  async myListings(userId: string): Promise<HostelListing[]> {
+    return this.hostelRepository.find({
+      where: { sellerId: userId },
+      order: { createdAt: 'DESC' },
+      relations: ['seller', 'likes'],
+    });
   }
 
   async update(
@@ -210,6 +237,121 @@ export class HostelsService {
       order: { createdAt: 'DESC' },
       relations: ['seller'],
     });
+  }
+
+  /** Moderation queue — oldest submission first, like any review queue. */
+  async adminListPending(): Promise<HostelListing[]> {
+    return this.hostelRepository.find({
+      where: { moderationStatus: ModerationStatus.PENDING },
+      order: { createdAt: 'ASC' },
+      relations: ['seller'],
+    });
+  }
+
+  /** Approves a listing, making it visible in the public feed, and notifies the seller + their schoolmates. */
+  async approve(id: string): Promise<HostelListing> {
+    const hostel = await this.findOne(id);
+    hostel.moderationStatus = ModerationStatus.APPROVED;
+    hostel.rejectionReason = undefined;
+    const saved = await this.hostelRepository.save(hostel);
+
+    try {
+      await this.notificationsService.notify(
+        hostel.sellerId,
+        null,
+        NotificationType.HOSTEL_APPROVED,
+        NotificationTargetType.HOSTEL,
+        saved.id,
+        'The Admin Team',
+      );
+      await this.notificationsService.notifySchoolmates(
+        hostel.sellerId,
+        NotificationType.HOSTEL_LISTED,
+        NotificationTargetType.HOSTEL,
+        saved.id,
+      );
+    } catch {
+      // best-effort — approval is already persisted
+    }
+
+    // Email the lister their listing is live (in-app + push were sent above).
+    // Best-effort — the approval is already persisted.
+    try {
+      await this.otpService.notifyUserOfHostelListingDecision(
+        hostel.seller,
+        hostel.hostelName,
+        true,
+      );
+    } catch {
+      // best-effort — approval is already persisted
+    }
+
+    return saved;
+  }
+
+  /** Rejects a listing — it stays invisible to everyone but the seller, who's told why. */
+  async reject(id: string, reason?: string): Promise<HostelListing> {
+    const hostel = await this.findOne(id);
+    hostel.moderationStatus = ModerationStatus.REJECTED;
+    hostel.rejectionReason = reason;
+    const saved = await this.hostelRepository.save(hostel);
+
+    try {
+      await this.notificationsService.notify(
+        hostel.sellerId,
+        null,
+        NotificationType.HOSTEL_REJECTED,
+        NotificationTargetType.HOSTEL,
+        saved.id,
+        'The Admin Team',
+        reason,
+      );
+    } catch {
+      // best-effort — rejection is already persisted
+    }
+
+    // Email the lister the decision and the reason (in-app + push got it too).
+    // Best-effort — the rejection is already persisted.
+    try {
+      await this.otpService.notifyUserOfHostelListingDecision(
+        hostel.seller,
+        hostel.hostelName,
+        false,
+        reason,
+      );
+    } catch {
+      // best-effort — rejection is already persisted
+    }
+
+    return saved;
+  }
+
+  async approveMany(ids: string[]): Promise<{ approved: string[]; errors: string[] }> {
+    const approved: string[] = [];
+    const errors: string[] = [];
+    for (const id of ids) {
+      try {
+        await this.approve(id);
+        approved.push(id);
+      } catch {
+        errors.push(id);
+      }
+    }
+    return { approved, errors };
+  }
+
+  async rejectMany(ids: string[], reason?: string): Promise<{ rejected: string[]; errors: string[] }> {
+    const rejected: string[] = [];
+    const errors: string[] = [];
+    for (const id of ids) {
+      try {
+        await this.reject(id, reason);
+        rejected.push(id);
+      } catch {
+        errors.push(id);
+      }
+    }
+    return { rejected, errors };
   }
 
   async adminCreate(userId: string, dto: CreateHostelDto): Promise<HostelListing> {

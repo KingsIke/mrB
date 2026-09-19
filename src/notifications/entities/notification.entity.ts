@@ -33,6 +33,10 @@ export enum NotificationType {
   STUDENT_UNION_REJECTED = 'student_union_rejected',
   STUDENT_VERIFICATION_APPROVED = 'student_verification_approved',
   STUDENT_VERIFICATION_REJECTED = 'student_verification_rejected',
+  MARKETPLACE_ITEM_APPROVED = 'marketplace_item_approved',
+  MARKETPLACE_ITEM_REJECTED = 'marketplace_item_rejected',
+  HOSTEL_APPROVED = 'hostel_approved',
+  HOSTEL_REJECTED = 'hostel_rejected',
 }
 
 export enum NotificationTargetType {

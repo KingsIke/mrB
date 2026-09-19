@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, MoreThan } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -9,6 +9,7 @@ import { User } from '../users/entities/user.entity';
 @Injectable()
 export class OtpService {
   private transporter: nodemailer.Transporter;
+  private readonly logger = new Logger(OtpService.name);
 
   constructor(
     @InjectRepository(OtpCode)
@@ -472,6 +473,201 @@ export class OtpService {
         '. It is now being reviewed and will be paid out to your bank account shortly.\n\nReference: ' +
         reference +
         '\n\nIf you did not request this withdrawal, please contact our support team immediately.',
+    });
+  }
+
+  // ========== MODERATION & VERIFICATION DECISION EMAILS ==========
+  /**
+   * Every approve/reject decision email has the same shape — what was
+   * decided, the reason (when the admin gave one) and what happens next —
+   * so the helpers below all funnel through here.
+   *
+   * Best-effort: callers should catch failures so an email problem never
+   * fails an admin's decision, which is already persisted by then.
+   */
+  private async sendDecisionEmail(params: {
+    user: User | null | undefined;
+    subject: string;
+    heading: string;
+    intro: string;
+    reason?: string;
+    nextSteps: string;
+  }): Promise<void> {
+    const { user, subject, heading, intro, reason, nextSteps } = params;
+    if (!user?.email) {
+      this.logger.warn(
+        `Skipping decision email ("${subject}"): user ${user?.id ?? 'unknown'} has no email address`,
+      );
+      return; // Nothing to send to
+    }
+
+    const from = this.configService.get('SMTP_FROM', this.configService.get('SMTP_USER'));
+    const firstName = user.firstName || 'there';
+    const safeIntro = this.escapeHtml(intro);
+    const safeReason = reason ? this.escapeHtml(reason) : undefined;
+
+    const reasonBlock = safeReason
+      ? `
+          <div style="background:#f8f9fa;padding:16px;border-radius:8px;margin:16px 0;border:1px solid #eeeeee;">
+            <p style="margin:0 0 6px;color:#555555;font-size:14px;"><strong>Reason</strong></p>
+            <p style="margin:0;color:#1a1a1a;font-size:14px;">${safeReason}</p>
+          </div>`
+      : '';
+
+    try {
+      await this.transporter.sendMail({
+        from: `"3NAMES" <${from}>`,
+        to: user.email,
+        subject,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e9e9e9; border-radius: 12px; background: #ffffff;">
+            <h2 style="color: #333333; margin-top: 0;">${heading}</h2>
+            <p style="color: #555555; font-size: 16px; line-height: 1.5;">Hi ${firstName}, ${safeIntro}</p>
+            ${reasonBlock}
+            <p style="color: #555555; font-size: 15px; line-height: 1.5;">${nextSteps}</p>
+            <hr style="border: 0; border-top: 1px solid #eeeeee; margin: 24px 0;" />
+            <p style="color: #999999; font-size: 13px; line-height: 1.4;">
+              This is an automated message from 3NAMES — please do not reply to this email.
+            </p>
+          </div>
+        `,
+        text:
+          `Hi ${firstName}, ${intro}` +
+          (reason ? ` Reason: ${reason}` : '') +
+          ` ${nextSteps}`,
+      });
+      this.logger.log(`Decision email sent to ${user.email} ("${subject}")`);
+    } catch (err) {
+      // Surface the real reason (bad SMTP credentials, blocked host, ...) in
+      // the logs; callers still swallow it so the persisted decision stands.
+      this.logger.error(
+        `Failed to send decision email to ${user.email} ("${subject}"): ` +
+          (err instanceof Error ? err.message : String(err)),
+      );
+      throw err;
+    }
+  }
+
+  /** Escapes user/listing-provided text before it's interpolated into email HTML. */
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  // ========== USER NOTIFICATION: MARKETPLACE LISTING DECISION ==========
+  /**
+   * Tell a seller whether their marketplace listing was approved or
+   * rejected. Rejections carry the admin's reason so the seller knows what
+   * to fix before resubmitting.
+   */
+  async notifyUserOfMarketplaceItemDecision(
+    user: User | null | undefined,
+    itemTitle: string | null | undefined,
+    approved: boolean,
+    reason?: string,
+  ): Promise<void> {
+    const listing = itemTitle ? `"${itemTitle}"` : 'your listing';
+
+    await this.sendDecisionEmail({
+      user,
+      subject: approved
+        ? 'Your marketplace listing was approved - 3NAMES'
+        : 'Your marketplace listing was not approved - 3NAMES',
+      heading: approved ? 'Listing approved ✅' : 'Listing not approved',
+      intro: approved
+        ? `your marketplace listing ${listing} was approved and is now live for your schoolmates to see.`
+        : `your marketplace listing ${listing} was reviewed and could not be approved, so it isn't visible to anyone else.`,
+      reason,
+      nextSteps: approved
+        ? 'You can edit, close or delete the listing any time from the Marketplace tab in the app.'
+        : 'You can update the listing and resubmit it for review from the Marketplace tab in the app.',
+    });
+  }
+
+  // ========== USER NOTIFICATION: HOSTEL LISTING DECISION ==========
+  /**
+   * Tell a lister whether their hostel listing was approved or rejected,
+   * including the admin's reason when it was rejected.
+   */
+  async notifyUserOfHostelListingDecision(
+    user: User | null | undefined,
+    hostelName: string | null | undefined,
+    approved: boolean,
+    reason?: string,
+  ): Promise<void> {
+    const listing = hostelName ? `"${hostelName}"` : 'your hostel listing';
+
+    await this.sendDecisionEmail({
+      user,
+      subject: approved
+        ? 'Your hostel listing was approved - 3NAMES'
+        : 'Your hostel listing was not approved - 3NAMES',
+      heading: approved ? 'Hostel listing approved ✅' : 'Hostel listing not approved',
+      intro: approved
+        ? `your hostel listing ${listing} was approved and is now live for your schoolmates to see.`
+        : `your hostel listing ${listing} was reviewed and could not be approved, so it isn't visible to anyone else.`,
+      reason,
+      nextSteps: approved
+        ? 'You can mark it as taken or update the details any time from the Hostels tab in the app.'
+        : 'You can update the listing and resubmit it for review from the Hostels tab in the app.',
+    });
+  }
+
+  // ========== USER NOTIFICATION: STUDENT VERIFICATION DECISION ==========
+  /**
+   * Tell a student whether the admin team approved or rejected their
+   * student verification documents.
+   */
+  async notifyUserOfVerificationDecision(
+    user: User | null | undefined,
+    approved: boolean,
+    reason?: string,
+  ): Promise<void> {
+    await this.sendDecisionEmail({
+      user,
+      subject: approved
+        ? 'Your student verification was approved - 3NAMES'
+        : 'Your student verification was not approved - 3NAMES',
+      heading: approved
+        ? 'Student verification approved ✅'
+        : 'Student verification not approved',
+      intro: approved
+        ? 'your student identity has been verified — your verified badge is now active on your profile.'
+        : "we reviewed your student verification documents and couldn't approve them.",
+      reason,
+      nextSteps: approved
+        ? 'Your verified badge lets schoolmates know your posts and listings come from a real student.'
+        : 'Please review what you uploaded and resubmit clear, valid proof of your student status in the app.',
+    });
+  }
+
+  // ========== USER NOTIFICATION: STUDENT UNION DECISION ==========
+  /**
+   * Tell a student whether the admin team approved or rejected their
+   * Student Union proof document. Approval unlocks campus event creation.
+   */
+  async notifyUserOfStudentUnionDecision(
+    user: User | null | undefined,
+    approved: boolean,
+    reason?: string,
+  ): Promise<void> {
+    await this.sendDecisionEmail({
+      user,
+      subject: approved
+        ? 'Your Student Union verification was approved - 3NAMES'
+        : 'Your Student Union verification was not approved - 3NAMES',
+      heading: approved ? 'Student Union verified ✅' : 'Student Union not approved',
+      intro: approved
+        ? 'your Student Union membership has been confirmed — you can now create campus events.'
+        : "we reviewed your Student Union document and couldn't approve it.",
+      reason,
+      nextSteps: approved
+        ? 'Head to the Events tab in the app to create your first campus event.'
+        : 'Please resubmit a valid Student Union document in the app so we can review it again.',
     });
   }
 

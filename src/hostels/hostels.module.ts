@@ -8,12 +8,14 @@ import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 import { School } from 'src/schools/entities/school.entity';
 import { User } from 'src/users/entities/user.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { OtpModule } from '../otp/otp.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([HostelListing, HostelLike, School, User]),
     CloudinaryModule,
     NotificationsModule,
+    OtpModule,
   ],
   controllers: [HostelsController],
   providers: [HostelsService],

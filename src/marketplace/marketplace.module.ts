@@ -7,12 +7,14 @@ import { MarketplaceLike } from './entities/marketplace-like.entity';
 import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 import { User } from 'src/users/entities/user.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { OtpModule } from '../otp/otp.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([MarketplaceItem, MarketplaceLike, User]),
     CloudinaryModule,
     NotificationsModule,
+    OtpModule,
   ],
   controllers: [MarketplaceController],
   providers: [MarketplaceService],

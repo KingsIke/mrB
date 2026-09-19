@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, SelectQueryBuilder } from 'typeorm';
+import { Repository, DataSource, SelectQueryBuilder, In } from 'typeorm';
 import { PastQuestion } from './entities/past-question.entity';
 import { CreatePastQuestionDto } from './dto/create-past-question.dto';
 import { ListPastQuestionsDto } from './dto/list-past-questions.dto';
@@ -167,11 +167,46 @@ export class PastQuestionsService {
     };
   }
 
+  /**
+   * Tags each item with `hasAccess` — true when the viewer can open it in
+   * the app without paying again: they uploaded it, it's free, or they
+   * already bought it (checked against the same coin_transactions record
+   * `purchaseAndGetFiles` uses to avoid double-charging).
+   */
+  private async attachAccessFlags<T extends PastQuestion>(
+    items: T[],
+    viewerId: string,
+  ): Promise<(T & { hasAccess: boolean })[]> {
+    const paidIds = items
+      .filter((pq) => (pq.priceCoins ?? 0) > 0 && pq.uploaderId !== viewerId)
+      .map((pq) => pq.id);
+
+    let purchasedIds = new Set<string>();
+    if (paidIds.length > 0) {
+      const purchases = await this.coinTransactionRepo.find({
+        where: { userId: viewerId, type: CoinTransactionType.GIFT_SENT, referenceId: In(paidIds) },
+        select: ['referenceId'],
+      });
+      purchasedIds = new Set(
+        purchases.map((p) => p.referenceId).filter((id): id is string => Boolean(id)),
+      );
+    }
+
+    return items.map((pq) => ({
+      ...pq,
+      hasAccess:
+        pq.uploaderId === viewerId ||
+        (pq.priceCoins ?? 0) <= 0 ||
+        purchasedIds.has(pq.id),
+    }));
+  }
+
   /** List past questions with optional filters (all departments) */
-  async list(dto: ListPastQuestionsDto): Promise<PaginatedResponse<PastQuestion>> {
+  async list(dto: ListPastQuestionsDto, viewerId: string): Promise<PaginatedResponse<PastQuestion>> {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 10;
-    return this.paginate(this.buildListQuery(dto), page, limit);
+    const result = await this.paginate(this.buildListQuery(dto), page, limit);
+    return { ...result, items: await this.attachAccessFlags(result.items, viewerId) };
   }
 
   /** List past questions uploaded by users in the current user's department */
@@ -189,7 +224,8 @@ export class PastQuestionsService {
 
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 10;
-    return this.paginate(this.buildListQuery(dto, user.departmentId), page, limit);
+    const result = await this.paginate(this.buildListQuery(dto, user.departmentId), page, limit);
+    return { ...result, items: await this.attachAccessFlags(result.items, userId) };
   }
 
   /** Purchase / Download logic remains unchanged */

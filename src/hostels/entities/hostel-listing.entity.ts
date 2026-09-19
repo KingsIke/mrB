@@ -18,6 +18,13 @@ export enum HostelStatus {
   UNAVAILABLE = 'unavailable',
 }
 
+/** Admin moderation gate — a listing only shows up in the public feed once APPROVED. */
+export enum ModerationStatus {
+  PENDING = 'pending',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+}
+
 @Entity('hostel_listings')
 export class HostelListing {
   @PrimaryGeneratedColumn('uuid')
@@ -115,6 +122,15 @@ export class HostelListing {
 
   @Column({ type: 'boolean', default: true })
   isAvailable!: boolean;
+
+  // Column default is APPROVED (not PENDING) so that adding this column to
+  // an existing table doesn't retroactively hide every listing that was
+  // already live. New submissions explicitly set PENDING in `create()`.
+  @Column({ type: 'enum', enum: ModerationStatus, default: ModerationStatus.APPROVED })
+  moderationStatus!: ModerationStatus;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  rejectionReason?: string;
 
   // Relations
   @ManyToOne(() => User, { eager: true, nullable: false })

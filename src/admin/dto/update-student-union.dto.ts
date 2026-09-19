@@ -1,4 +1,4 @@
-import { IsIn, IsOptional } from 'class-validator';
+import { IsIn, IsOptional, IsString } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateStudentUnionDto {
@@ -15,4 +15,13 @@ export class UpdateStudentUnionDto {
   @IsOptional()
   @IsIn([true, false])
   grantAccess?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Why the document was rejected. Shown in the student\'s decision email; only used when status is "rejected".',
+    example: 'Please upload the stamped union membership letter.',
+  })
+  @IsOptional()
+  @IsString()
+  reason?: string;
 }

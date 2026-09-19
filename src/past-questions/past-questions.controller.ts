@@ -90,8 +90,8 @@ async adminBulkDelete(@Body() body: { ids: string[] }) {
 
   @Get()
   @ApiOperation({ summary: 'List past questions (paginated, with optional filters)' })
-  async list(@Query() dto: ListPastQuestionsDto) {
-    return this.pqService.list(dto);
+  async list(@CurrentUser('userId') userId: string, @Query() dto: ListPastQuestionsDto) {
+    return this.pqService.list(dto, userId);
   }
 
   @Get('top-contributors')

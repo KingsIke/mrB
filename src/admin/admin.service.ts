@@ -42,6 +42,7 @@ import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { UpdateVerificationDto } from './dto/update-verification.dto';
 import { UpdateStudentUnionDto } from './dto/update-student-union.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { OtpService } from '../otp/otp.service';
 import { NotificationType, NotificationTargetType } from '../notifications/entities/notification.entity';
 import {
   AdminTransactionQueryDto,
@@ -140,6 +141,7 @@ export class AdminService {
     @InjectRepository(DeptWarStats)
     private readonly deptWarStatsRepository: Repository<DeptWarStats>,
     private readonly notificationsService: NotificationsService,
+    private readonly otpService: OtpService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -312,6 +314,20 @@ export class AdminService {
       // best-effort — the decision is already persisted
     }
 
+    // Email the student the decision too. "pending" isn't a decision — it
+    // just returns the submission to the review queue.
+    if (dto.status !== 'pending') {
+      try {
+        await this.otpService.notifyUserOfVerificationDecision(
+          saved,
+          dto.status === 'verified',
+          dto.status === 'rejected' ? dto.reason : undefined,
+        );
+      } catch {
+        // best-effort — the decision is already persisted
+      }
+    }
+
     return saved;
   }
 
@@ -385,6 +401,20 @@ export class AdminService {
       );
     } catch (err) {
       // best-effort — the decision is already persisted
+    }
+
+    // Email the student the decision too. "pending" isn't a decision — it
+    // just returns the submission to the review queue.
+    if (dto.status !== 'pending') {
+      try {
+        await this.otpService.notifyUserOfStudentUnionDecision(
+          saved,
+          dto.status === 'verified',
+          dto.status === 'rejected' ? dto.reason : undefined,
+        );
+      } catch {
+        // best-effort — the decision is already persisted
+      }
     }
 
     return saved;

@@ -32,7 +32,7 @@ import { UpdatePrivacyDto } from './dto/update-privacy.dto';
 import { User } from './entities/user.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { memoryStorage } from 'multer';
+import { documentUploadOptions } from '../common/multer/document-upload.config';
 import { FileInterceptor } from '@nestjs/platform-express';
 
 @ApiTags('Users')
@@ -112,18 +112,7 @@ export class UsersController {
 
   @Patch('me')
   @UseInterceptors(
-    FileInterceptor('profilePicture', {
-      storage: memoryStorage(),
-      limits: { fileSize: 5 * 1024 * 1024 },
-      fileFilter: (req, file, callback) => {
-        const allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
-        if (allowedMimes.includes(file.mimetype)) {
-          callback(null, true);
-        } else {
-          callback(new Error('Only image files (JPEG, PNG, WebP) are allowed'), false);
-        }
-      },
-    }),
+    FileInterceptor('profilePicture', documentUploadOptions()),
   )
   @ApiOperation({ summary: 'Update current user profile' })
   @ApiConsumes('multipart/form-data', 'application/json')
