@@ -37,6 +37,8 @@ import {
   User,
   UserStatus,
   OnboardingStep,
+  VERIFICATION_GRACE_PERIOD_MS,
+  VERIFICATION_GRACE_RESTRICT_REASON,
 } from "../users/entities/user.entity";
 import { OtpPurpose } from "src/otp/entities/otp.entity";
 import { GamificationService } from '../gamification/gamification.service';
@@ -286,6 +288,12 @@ export class AuthService {
       );
     }
 
+    if (user.status === UserStatus.BANNED) {
+      throw new UnauthorizedException(
+        "This account has been banned." + (user.statusReason ? ` Reason: ${user.statusReason}` : ""),
+      );
+    }
+
     if (!user.isEmailVerified) {
       await this.otpService.generateAndSendOtp(user);
       throw new UnauthorizedException(
@@ -345,8 +353,8 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired verification code');
     }
 
-    if (user.isOnboardingComplete && user.status !== UserStatus.ACTIVE) {
-      await this.usersService.update(user.id, { status: UserStatus.ACTIVE });
+    if (user.status === UserStatus.BANNED) {
+      throw new UnauthorizedException('This account has been banned.');
     }
 
     return this.buildAuthResponse(user);
@@ -444,7 +452,12 @@ export class AuthService {
 
     const tokens = await this.generateTokens(user);
 
-    if (user.isOnboardingComplete && user.status !== UserStatus.ACTIVE) {
+    // Only promote a still-pending status to ACTIVE — never overwrite an
+    // admin-set SUSPENDED or BANNED status just because the user logged in.
+    const isPendingStatus =
+      user.status === UserStatus.PENDING_VERIFICATION ||
+      user.status === UserStatus.PENDING_ONBOARDING;
+    if (user.isOnboardingComplete && isPendingStatus) {
       await this.usersService.update(user.id, { status: UserStatus.ACTIVE });
     }
 
@@ -637,7 +650,7 @@ export class AuthService {
       });
 
       const user = await this.usersService.findById(payload.sub);
-      if (!user || user.status === UserStatus.SUSPENDED) {
+      if (!user || user.status === UserStatus.BANNED || user.deletedAt) {
         throw new UnauthorizedException("Invalid refresh token");
       }
 
@@ -898,6 +911,10 @@ export class AuthService {
       );
     }
 
+    if (user.status === UserStatus.BANNED) {
+      throw new UnauthorizedException("This account has been banned.");
+    }
+
     if (!user.deactivatedAt) {
       throw new BadRequestException(
         "This account is not deactivated. You can log in normally.",
@@ -931,7 +948,10 @@ export class AuthService {
 
     const tokens = await this.generateTokens(user);
 
-    if (user.status !== UserStatus.ACTIVE) {
+    const isPendingStatus =
+      user.status === UserStatus.PENDING_VERIFICATION ||
+      user.status === UserStatus.PENDING_ONBOARDING;
+    if (isPendingStatus) {
       await this.usersService.update(user.id, { status: UserStatus.ACTIVE });
     }
 
@@ -1118,11 +1138,26 @@ export class AuthService {
       // If documents were rejected, set verification status to rejected
       if (rejectionData.isStudentIdRejected || rejectionData.isAdmissionLetterRejected) {
         updateData.verificationStatus = "rejected";
+        updateData.verificationGraceExpiresAt = new Date(Date.now() + VERIFICATION_GRACE_PERIOD_MS);
       } else {
         updateData.verificationStatus = "pending";
+        updateData.verificationGraceExpiresAt = null;
       }
     } else {
       updateData.verificationStatus = "pending";
+      updateData.verificationGraceExpiresAt = null;
+    }
+
+    // Resubmitting lifts an auto-restriction from an expired grace period —
+    // but never touches a restriction (or suspension/ban) an admin applied
+    // for an unrelated reason.
+    if (
+      updateData.verificationStatus === "pending" &&
+      user.status === UserStatus.RESTRICTED &&
+      user.statusReason === VERIFICATION_GRACE_RESTRICT_REASON
+    ) {
+      updateData.status = UserStatus.ACTIVE;
+      updateData.statusReason = null;
     }
 
     const updatedUser = await this.usersService.update(userId, updateData);
@@ -1290,6 +1325,10 @@ export class AuthService {
 
     if (existingUser.deletedAt) {
       throw new UnauthorizedException('This account has been deleted.');
+    }
+
+    if (existingUser.status === UserStatus.BANNED) {
+      throw new UnauthorizedException('This account has been banned.');
     }
 
     // Handle 2FA

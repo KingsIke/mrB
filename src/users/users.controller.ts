@@ -29,9 +29,11 @@ import { GamificationService } from '../gamification/gamification.service';
 import { StreamService } from './stream.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdatePrivacyDto } from './dto/update-privacy.dto';
+import { ReportContentDto } from '../posts/dto/report-content.dto';
 import { User } from './entities/user.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { AllowSuspended } from '../auth/decorators/allow-suspended.decorator';
 import { documentUploadOptions } from '../common/multer/document-upload.config';
 import { FileInterceptor } from '@nestjs/platform-express';
 
@@ -51,6 +53,7 @@ export class UsersController {
   // --------------------------------------------------------------------------
 
   @Get('me')
+  @AllowSuspended()
   @ApiOperation({ summary: 'Get current user profile' })
   @ApiResponse({ status: 200, description: 'Current user profile', type: User })
   async getMe(@CurrentUser('userId') userId: string) {
@@ -66,6 +69,7 @@ export class UsersController {
   }
 
   @Get('me/stats')
+  @AllowSuspended()
   @ApiOperation({ summary: 'Get current user profile statistics' })
   @ApiResponse({
     status: 200,
@@ -76,6 +80,7 @@ export class UsersController {
   }
 
   @Get('me/privacy')
+  @AllowSuspended()
   @ApiOperation({ summary: 'Get current user privacy settings' })
   @ApiResponse({ status: 200, description: 'Privacy settings' })
   async getMyPrivacy(@CurrentUser('userId') userId: string) {
@@ -239,7 +244,9 @@ export class UsersController {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    const { password, ...userWithoutPassword } = user;
+    // statusReason/verificationGraceExpiresAt are moderation-facing details —
+    // never expose them on another user's profile.
+    const { password, statusReason, verificationGraceExpiresAt, ...userWithoutPassword } = user;
 
     // Private profiles are only visible to the owner and their followers
     if (user.privateProfile && requesterId !== user.id) {
@@ -263,6 +270,16 @@ export class UsersController {
     }
 
     return userWithoutPassword;
+  }
+
+  @Post(':id/report')
+  @ApiOperation({ summary: 'Report a user account' })
+  async reportUser(
+    @CurrentUser('userId') userId: string,
+    @Param('id') id: string,
+    @Body() dto: ReportContentDto,
+  ) {
+    return this.usersService.reportUser(userId, id, dto.reason);
   }
 
   @Delete(':id')

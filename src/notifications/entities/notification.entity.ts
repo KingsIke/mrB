@@ -37,6 +37,7 @@ export enum NotificationType {
   MARKETPLACE_ITEM_REJECTED = 'marketplace_item_rejected',
   HOSTEL_APPROVED = 'hostel_approved',
   HOSTEL_REJECTED = 'hostel_rejected',
+  JOB_APPLIED = 'job_applied',
 }
 
 export enum NotificationTargetType {
@@ -50,6 +51,7 @@ export enum NotificationTargetType {
   EVENT = 'event',
   USER = 'user',
   WAR = 'war',
+  JOB = 'job',
 }
 
 @Entity('notifications')

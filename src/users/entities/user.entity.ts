@@ -11,6 +11,7 @@ import {
   BeforeUpdate,
   OneToMany,
 } from 'typeorm';
+import { Exclude } from 'class-transformer';
 import { School } from '../../schools/entities/school.entity';
 import { Faculty } from '../../faculties/entities/faculty.entity';
 import { Department } from '../../departments/entities/department.entity';
@@ -34,8 +35,20 @@ export enum UserStatus {
   PENDING_VERIFICATION = 'pending_verification',
   PENDING_ONBOARDING = 'pending_onboarding',
   ACTIVE = 'active',
+  RESTRICTED = 'restricted',
   SUSPENDED = 'suspended',
+  BANNED = 'banned',
 }
+
+// The exact statusReason auto-applied when a rejected verification's grace
+// period expires. Used to tell an auto-restriction apart from one an admin
+// applied by hand, so resubmitting documents only auto-lifts the former.
+export const VERIFICATION_GRACE_RESTRICT_REASON =
+  'Student verification was rejected and not resubmitted within the grace period.';
+
+// How long a student has to resubmit documents after a rejection before
+// UsersService.escalateExpiredVerificationGrace restricts the account.
+export const VERIFICATION_GRACE_PERIOD_MS = 7 * 24 * 60 * 60 * 1000;
 
 export enum OnboardingStep {
   NONE = 'none',
@@ -57,6 +70,10 @@ export class User {
   @Column({ type: 'varchar', length: 255, unique: true })
   email: string;
 
+  // Never serialized in an HTTP response (see ClassSerializerInterceptor in
+  // main.ts) — this only affects the JSON going out, not in-memory access
+  // (bcrypt.compare, etc. still read it normally).
+  @Exclude()
   @Column({ type: 'varchar', length: 255, nullable: true })
   password: string | null;
 
@@ -170,8 +187,20 @@ export class User {
   @Column({ type: 'enum', enum: UserStatus, default: UserStatus.PENDING_VERIFICATION })
   status: UserStatus;
 
+  // Reason an admin set the account to `suspended` or `banned`, shown back
+  // to the user on the suspended/banned screen and in the appeal flow.
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  statusReason: string | null;
+
   @Column({ type: 'varchar', length: 20, default: 'unverified' })
   verificationStatus: string;
+
+  // Deadline to resubmit after a verification rejection. Set on rejection,
+  // cleared on resubmission/approval. Swept hourly by
+  // UsersService.escalateExpiredVerificationGrace, which restricts anyone
+  // still `rejected` past this date.
+  @Column({ type: 'timestamptz', nullable: true })
+  verificationGraceExpiresAt: Date | null;
 
   @Column({ type: 'enum', enum: OnboardingStep, default: OnboardingStep.NONE })
   onboardingStep: OnboardingStep;

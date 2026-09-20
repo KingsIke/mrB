@@ -109,6 +109,8 @@ export class NotificationsService {
         return `Your hostel listing was approved and is now live!`;
       case NotificationType.HOSTEL_REJECTED:
         return `Your hostel listing was not approved.`;
+      case NotificationType.JOB_APPLIED:
+        return `${actorName} applied to your job posting`;
       default:
         return `${actorName} interacted with your content`;
     }

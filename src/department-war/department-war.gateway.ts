@@ -11,7 +11,10 @@ import { Server, Socket } from 'socket.io';
 import { Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { extractTokenFromSocket } from '../auth/guards/ws-jwt.guard';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { extractTokenFromSocket, isSocketAccessBlocked } from '../auth/guards/ws-jwt.guard';
+import { User } from '../users/entities/user.entity';
 
 export enum WarWebSocketEvents {
   // Client → Server
@@ -52,7 +55,11 @@ export class DepartmentWarGateway implements OnGatewayConnection, OnGatewayDisco
   // Used to answer war:resume requests with the user's current battle state.
   private resumeHandler: ((userId: string) => Promise<any>) | null = null;
 
-  constructor(private jwtService: JwtService, private configService: ConfigService) {}
+  constructor(
+    private jwtService: JwtService,
+    private configService: ConfigService,
+    @InjectRepository(User) private userRepo: Repository<User>,
+  ) {}
 
   setResumeHandler(handler: (userId: string) => Promise<any>) {
     this.resumeHandler = handler;
@@ -67,6 +74,16 @@ export class DepartmentWarGateway implements OnGatewayConnection, OnGatewayDisco
         });
         const userId = payload.sub || payload.id;
         if (userId) {
+          const user = await this.userRepo.findOne({
+            where: { id: userId },
+            select: { id: true, status: true },
+          });
+          if (!user || isSocketAccessBlocked(user.status)) {
+            this.logger.warn(`Rejected war socket for ${user?.status ?? 'missing'} user: ${userId}`);
+            client.emit('auth:blocked', { reason: user?.status ?? 'not_found' });
+            client.disconnect(true);
+            return;
+          }
           this.userSockets.set(userId, client.id);
           this.socketUsers.set(client.id, userId);
           this.logger.log(`War client connected: ${client.id} (user: ${userId})`);

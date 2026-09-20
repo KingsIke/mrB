@@ -16,6 +16,7 @@ import { Throttle } from '@nestjs/throttler';
 import { StoriesService } from './stories.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { BlockRestricted } from '../auth/decorators/block-restricted.decorator';
 import { CreateStoryDto } from './dto/create-story.dto';
 import { ReactStoryDto } from './dto/react-story.dto';
 import { ReplyStoryDto } from './dto/reply-story.dto';
@@ -31,6 +32,7 @@ export class StoriesController {
   constructor(private readonly storiesService: StoriesService) {}
 
   @Post()
+  @BlockRestricted()
   @RequirePerk('Story highlights')
   @UseGuards(PerkGuard)
   @Throttle({ default: { limit: 10, ttl: 60000 } })

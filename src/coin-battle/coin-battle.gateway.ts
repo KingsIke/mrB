@@ -13,8 +13,9 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
-import { extractTokenFromSocket } from '../auth/guards/ws-jwt.guard';
+import { extractTokenFromSocket, isSocketAccessBlocked } from '../auth/guards/ws-jwt.guard';
 import { CoinBattle, CoinBattleStatus } from './entities/coin-battle.entity';
+import { User } from '../users/entities/user.entity';
 
 export enum CoinBattleWebSocketEvents {
   // Client → Server
@@ -59,6 +60,7 @@ export class CoinBattleGateway implements OnGatewayConnection, OnGatewayDisconne
     private jwtService: JwtService,
     private configService: ConfigService,
     @InjectRepository(CoinBattle) private battleRepo: Repository<CoinBattle>,
+    @InjectRepository(User) private userRepo: Repository<User>,
   ) {}
 
   setOnDisconnectCallback(cb: (userId: string) => Promise<void>) {
@@ -74,6 +76,16 @@ export class CoinBattleGateway implements OnGatewayConnection, OnGatewayDisconne
         });
         const userId = payload.sub || payload.id;
         if (userId) {
+          const user = await this.userRepo.findOne({
+            where: { id: userId },
+            select: { id: true, status: true },
+          });
+          if (!user || isSocketAccessBlocked(user.status)) {
+            this.logger.warn(`Rejected coin battle socket for ${user?.status ?? 'missing'} user: ${userId}`);
+            client.emit('auth:blocked', { reason: user?.status ?? 'not_found' });
+            client.disconnect(true);
+            return;
+          }
           this.userSockets.set(userId, client.id);
           this.socketUsers.set(client.id, userId);
           this.logger.log(`Coin battle client connected: ${client.id} (user: ${userId})`);

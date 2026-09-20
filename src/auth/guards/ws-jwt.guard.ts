@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { WsException } from '@nestjs/websockets';
 import { Socket } from 'socket.io';
 import { JwtPayload } from '../strategies/jwt.strategy';
+import { UserStatus } from '../../users/entities/user.entity';
 
 export function extractTokenFromSocket(client: Socket): string | null {
   // 1. Check auth object or headers
@@ -40,6 +41,16 @@ export async function verifySocketToken(
   } catch {
     return null;
   }
+}
+
+// A banned or suspended account gets no realtime access at all. None of
+// their allowlisted HTTP actions (see AllowSuspended/BlockRestricted) are
+// socket-based, so there's nothing to selectively let through here —
+// gateways should look up the connecting user's status and disconnect if
+// this returns true. Restricted accounts are left out: they keep full
+// messaging/presence access and only lose the (REST-only) create actions.
+export function isSocketAccessBlocked(status: UserStatus | null | undefined): boolean {
+  return status === UserStatus.BANNED || status === UserStatus.SUSPENDED;
 }
 
 @Injectable()

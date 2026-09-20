@@ -15,6 +15,10 @@ export enum CoinTransactionType {
   BATTLE_ENTRY = 'battle_entry',
   BATTLE_WIN = 'battle_win',
   BATTLE_REFUND = 'battle_refund',
+  PUZZLE_HIGH_SCORE = 'puzzle_high_score',
+  PRECISION_TAP_STAKE = 'precision_tap_stake',
+  PRECISION_TAP_WIN = 'precision_tap_win',
+  PRECISION_TAP_REFUND = 'precision_tap_refund',
 }
 
 @Entity('coin_transactions')

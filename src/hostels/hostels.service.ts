@@ -14,6 +14,30 @@ import {
   NotificationType,
 } from '../notifications/entities/notification.entity';
 
+// The seller relation is embedded in every listing response — restrict it to
+// display-safe fields in JS after the query so the password hash and other
+// account/moderation details never leave the API.
+const SAFE_SELLER_FIELDS = [
+  'id',
+  'username',
+  'firstName',
+  'lastName',
+  'profilePictureUrl',
+  'profileFrame',
+  'phoneNumber',
+] as const;
+
+function sanitizeSeller<T extends { seller?: User | null }>(item: T): T {
+  if (item.seller) {
+    const safeSeller: Partial<User> = {};
+    for (const field of SAFE_SELLER_FIELDS) {
+      (safeSeller as any)[field] = item.seller[field];
+    }
+    item.seller = safeSeller as User;
+  }
+  return item;
+}
+
 @Injectable()
 export class HostelsService {
   constructor(
@@ -66,11 +90,12 @@ export class HostelsService {
       baseWhere.schoolId = schoolId;
     }
 
-    return this.hostelRepository.find({
+    const listings = await this.hostelRepository.find({
       where: baseWhere,
       order: { createdAt: 'DESC' },
       relations: ['seller', 'likes'],
     });
+    return listings.map(sanitizeSeller);
   }
 
   /**
@@ -97,16 +122,17 @@ export class HostelsService {
       throw new NotFoundException(`Hostel listing with ID "${id}" not found`);
     }
 
-    return hostel;
+    return sanitizeSeller(hostel);
   }
 
   /** All of the current user's own listings, regardless of moderation status. */
   async myListings(userId: string): Promise<HostelListing[]> {
-    return this.hostelRepository.find({
+    const listings = await this.hostelRepository.find({
       where: { sellerId: userId },
       order: { createdAt: 'DESC' },
       relations: ['seller', 'likes'],
     });
+    return listings.map(sanitizeSeller);
   }
 
   async update(

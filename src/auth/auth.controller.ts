@@ -32,6 +32,7 @@ import { GoogleLoginDto } from './dto/google-login.dto';
 import { Verify2faDto } from '../users/dto/verify-2fa.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
+import { AllowSuspended } from './decorators/allow-suspended.decorator';
 import { documentUploadOptions } from '../common/multer/document-upload.config';
 
 @ApiTags('Auth')
@@ -94,6 +95,7 @@ export class AuthController {
 
     @Post('change-password')
   @UseGuards(JwtAuthGuard)
+  @AllowSuspended()
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Change password while logged in (returns fresh tokens)' })
@@ -108,6 +110,7 @@ export class AuthController {
 
   @Post('deactivate-account')
   @UseGuards(JwtAuthGuard)
+  @AllowSuspended()
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Temporarily deactivate the current account' })
@@ -122,6 +125,7 @@ export class AuthController {
 
   @Post('delete-account')
   @UseGuards(JwtAuthGuard)
+  @AllowSuspended()
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Permanently delete the current account' })

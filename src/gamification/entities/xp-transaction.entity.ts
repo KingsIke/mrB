@@ -9,6 +9,8 @@ export enum XpSource {
   DAILY_LOGIN = 'daily_login',
   STREAK_BONUS = 'streak_bonus',
   GIFT_GIVEN_BONUS = 'gift_given_bonus',
+  PUZZLE_MILESTONE = 'puzzle_milestone',
+  WORD_GAME_WIN = 'word_game_win',
 }
 
 @Entity('xp_transactions')

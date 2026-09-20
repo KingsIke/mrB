@@ -4,6 +4,7 @@ import { NotificationsService } from './notifications.service';
 import { PushNotificationsService } from './push-notifications.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { AllowSuspended } from '../auth/decorators/allow-suspended.decorator';
 import { CursorPaginationDto } from '../common/pagination/cursor-pagination.dto';
 
 @ApiTags('Notifications')
@@ -17,12 +18,14 @@ export class NotificationsController {
   ) {}
 
   @Get()
+  @AllowSuspended()
   @ApiOperation({ summary: 'List my notifications' })
   async list(@CurrentUser('userId') userId: string, @Query() pagination: CursorPaginationDto) {
     return this.notificationsService.list(userId, pagination);
   }
 
   @Get('unread-count')
+  @AllowSuspended()
   @ApiOperation({ summary: 'Get unread notification count' })
   async unreadCount(@CurrentUser('userId') userId: string) {
     const count = await this.notificationsService.getUnreadCount(userId);
@@ -30,6 +33,7 @@ export class NotificationsController {
   }
 
   @Patch(':id/read')
+  @AllowSuspended()
   @ApiOperation({ summary: 'Mark a notification as read' })
   async markRead(@CurrentUser('userId') userId: string, @Param('id') id: string) {
     await this.notificationsService.markRead(userId, id);
@@ -37,6 +41,7 @@ export class NotificationsController {
   }
 
   @Patch('read-all')
+  @AllowSuspended()
   @ApiOperation({ summary: 'Mark all notifications as read' })
   async markAllRead(@CurrentUser('userId') userId: string) {
     await this.notificationsService.markAllRead(userId);
@@ -46,6 +51,7 @@ export class NotificationsController {
   // ============ PUSH TOKEN ============
 
   @Get('preferences')
+  @AllowSuspended()
   @ApiOperation({ summary: 'Get notification preferences' })
   async getPreferences(@CurrentUser('userId') userId: string) {
     const user = await this.notificationsService.getUserPreferences(userId);
@@ -59,6 +65,7 @@ export class NotificationsController {
   }
 
   @Patch('preferences')
+  @AllowSuspended()
   @ApiOperation({ summary: 'Update notification preferences' })
   async updatePreferences(
     @CurrentUser('userId') userId: string,

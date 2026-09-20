@@ -4,7 +4,7 @@ import { Repository, LessThan, MoreThan } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import { OtpCode, OtpPurpose } from './entities/otp.entity';
-import { User } from '../users/entities/user.entity';
+import { User, UserStatus } from '../users/entities/user.entity';
 
 @Injectable()
 export class OtpService {
@@ -87,7 +87,7 @@ export class OtpService {
       `,
       text: `Welcome back, ${displayName}! Your 3NAMES account has been reactivated and you are now logged in. If you didn't reactivate your account, please change your password immediately.`,
     });
-  }
+  } 
 
   // ========== ADMIN NOTIFICATION: NEW USER AWAITING VERIFICATION ==========
   /**
@@ -627,6 +627,14 @@ export class OtpService {
     approved: boolean,
     reason?: string,
   ): Promise<void> {
+    const deadline = user?.verificationGraceExpiresAt
+      ? new Date(user.verificationGraceExpiresAt).toLocaleDateString('en-US', {
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric',
+        })
+      : null;
+
     await this.sendDecisionEmail({
       user,
       subject: approved
@@ -641,7 +649,10 @@ export class OtpService {
       reason,
       nextSteps: approved
         ? 'Your verified badge lets schoolmates know your posts and listings come from a real student.'
-        : 'Please review what you uploaded and resubmit clear, valid proof of your student status in the app.',
+        : 'Please review what you uploaded and resubmit clear, valid proof of your student status in the app.' +
+          (deadline
+            ? ` You have until ${deadline} to resubmit — after that, your account will be automatically restricted (limited to browsing, messaging, and purchases) until you do.`
+            : ''),
     });
   }
 
@@ -668,6 +679,67 @@ export class OtpService {
       nextSteps: approved
         ? 'Head to the Events tab in the app to create your first campus event.'
         : 'Please resubmit a valid Student Union document in the app so we can review it again.',
+    });
+  }
+
+  // ========== USER NOTIFICATION: ACCOUNT STATUS CHANGE ==========
+  /**
+   * Tell a student their account was restricted, suspended, or banned by an
+   * admin (or reactivated out of one of those states). Best-effort — callers
+   * catch failures so the persisted status change is never blocked by email.
+   */
+  async notifyUserOfAccountStatusChange(
+    user: User | null | undefined,
+    status: UserStatus,
+    reason?: string,
+  ): Promise<void> {
+    const from = this.configService.get('CONTACT_MAIL', this.configService.get('CONTACT_MAIL'));
+
+    const copy: Record<
+      'restricted' | 'suspended' | 'banned' | 'active',
+      { subject: string; heading: string; intro: string; nextSteps: string }
+    > = {
+      restricted: {
+        subject: 'Your account has been restricted - 3NAMES',
+        heading: 'Account restricted',
+        intro: 'your account has been placed on restricted access.',
+        nextSteps:
+          "You can still browse, comment, message, and buy as normal, but you won't be able to create new posts, marketplace/hostel listings, or send gifts until this is lifted. " +
+          'If you think this is a mistake, use "Report a Problem" in the app to reach our support team.',
+      },
+      suspended: {
+        subject: 'Your account has been suspended - 3NAMES',
+        heading: 'Account suspended',
+        intro: 'your account has been suspended.',
+        nextSteps:
+          'You can still sign in to view your profile and manage your account, but posting, messaging, and marketplace activity are on hold until this is resolved. ' +
+          'If you think this is a mistake, use "Report a Problem" in the app to reach our support team.',
+      },
+      banned: {
+        subject: 'Your account has been banned - 3NAMES',
+        heading: 'Account banned',
+        intro: 'your account has been banned from 3NAMES.',
+        nextSteps:
+          `You will no longer be able to sign in. If you believe this was done in error, contact us at ${from} and we'll take a look.`,
+      },
+      active: {
+        subject: 'Your account is active again - 3NAMES',
+        heading: 'Account reactivated ✅',
+        intro: 'your account has been reactivated and is back to full access.',
+        nextSteps: 'You can now use 3NAMES as normal. Welcome back!',
+      },
+    };
+
+    const entry = copy[status as keyof typeof copy];
+    if (!entry) return; // Not a moderation status change — nothing to email
+
+    await this.sendDecisionEmail({
+      user,
+      subject: entry.subject,
+      heading: entry.heading,
+      intro: entry.intro,
+      reason,
+      nextSteps: entry.nextSteps,
     });
   }
 

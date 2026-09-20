@@ -4,6 +4,7 @@ import { SupportService } from './support.service';
 import { ReportProblemDto } from './dto/report-problem.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { AllowSuspended } from '../auth/decorators/allow-suspended.decorator';
 
 @ApiTags('Support')
 @Controller('support')
@@ -13,6 +14,7 @@ export class SupportController {
   constructor(private readonly supportService: SupportService) {}
 
   @Post('report-problem')
+  @AllowSuspended()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Submit a problem report to support' })
   @ApiResponse({ status: 201, description: 'Problem report received' })

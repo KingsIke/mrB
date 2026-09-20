@@ -18,6 +18,7 @@ export interface AuthenticatedUser {
   email: string;
   username: string;
   schoolId?:string
+  status: UserStatus;
 }
 
 @Injectable()
@@ -35,8 +36,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   async validate(payload: JwtPayload): Promise<AuthenticatedUser> {
     const user = await this.usersService.findById(payload.sub);
-    if (!user || user.status === UserStatus.SUSPENDED) {
-      throw new UnauthorizedException('User not found or suspended');
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    // Banned accounts are locked out entirely. Suspended accounts are let
+    // through here — JwtAuthGuard restricts them to an allowlist of routes.
+    if (user.status === UserStatus.BANNED) {
+      throw new UnauthorizedException('This account has been banned.');
     }
 
     // Reject deactivated or deleted accounts
@@ -54,6 +61,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       email: payload.email,
       username: payload.username,
       schoolId: payload.schoolId,
+      status: user.status,
     };
   }
 }

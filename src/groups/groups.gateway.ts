@@ -15,7 +15,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { GroupMember } from './entities/group-member.entity';
 import { User } from '../users/entities/user.entity';
-import { verifySocketToken } from '../auth/guards/ws-jwt.guard';
+import { verifySocketToken, isSocketAccessBlocked } from '../auth/guards/ws-jwt.guard';
 
 export enum GroupWebSocketEvents {
   MESSAGE_NEW = 'message:new',
@@ -99,6 +99,18 @@ export class GroupsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.disconnect(true);
       return;
     }
+
+    const user = await this.userRepository.findOne({
+      where: { id: payload.sub },
+      select: { id: true, status: true },
+    });
+    if (!user || isSocketAccessBlocked(user.status)) {
+      this.logger.warn(`Rejected socket for ${user?.status ?? 'missing'} user: ${payload.sub}`);
+      client.emit('auth:blocked', { reason: user?.status ?? 'not_found' });
+      client.disconnect(true);
+      return;
+    }
+
     client.data.userId = payload.sub;
     client.data.joinedGroups = new Set<string>();
 

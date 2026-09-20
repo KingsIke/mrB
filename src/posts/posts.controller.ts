@@ -21,6 +21,7 @@ import { Throttle } from '@nestjs/throttler';
 import { PostsService } from './posts.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { BlockRestricted } from '../auth/decorators/block-restricted.decorator';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { FeedQueryDto } from './dto/feed-query.dto';
@@ -37,6 +38,7 @@ export class PostsController {
   constructor(private readonly postsService: PostsService) {}
 
   @HttpPost()
+  @BlockRestricted()
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @UseInterceptors(FilesInterceptor('media', 20, mediaUploadOptions))
   @ApiConsumes('multipart/form-data')

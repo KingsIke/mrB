@@ -34,6 +34,9 @@ import { TreasureHuntModule } from './treasure-hunt/treasure-hunt.module';
 import { MaterialsModule } from './materials/materials.module';
 import { CallsModule } from './calls/calls.module';
 import { CoinBattleModule } from './coin-battle/coin-battle.module';
+import { PuzzleModule } from './puzzle/puzzle.module';
+import { WordGameModule } from './word-game/word-game.module';
+import { PrecisionTapModule } from './precision-tap/precision-tap.module';
 
 @Module({
   imports: [
@@ -85,6 +88,9 @@ import { CoinBattleModule } from './coin-battle/coin-battle.module';
     MaterialsModule,
     CallsModule,
     CoinBattleModule,
+    PuzzleModule,
+    WordGameModule,
+    PrecisionTapModule,
   ],
 })
 export class AppModule {}

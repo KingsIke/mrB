@@ -137,8 +137,8 @@ export class JobsService {
         .notify(
           job.postedById,
           userId,
-          NotificationType.POST_COMMENTED, // reuse type — or add JOB_APPLIED later
-          undefined,
+          NotificationType.JOB_APPLIED,
+          NotificationTargetType.JOB,
           jobId,
           applicant.username,
         )

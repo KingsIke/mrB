@@ -15,6 +15,9 @@ import { JobApplication } from '../jobs/entities/job-application.entity';
 import { Question } from '../department-war/entities/question.entity';
 import { Battle } from '../department-war/entities/battle.entity';
 import { DeptWarStats } from '../department-war/entities/dept-war-stats.entity';
+import { SupportRequest } from '../support/entities/support-request.entity';
+import { ContentReport } from '../posts/entities/content-report.entity';
+import { PostComment } from '../posts/entities/post-comment.entity';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { OtpModule } from '../otp/otp.module';
@@ -36,6 +39,9 @@ import { AppDownloadsModule } from './app-downloads.module';
       Question,
       Battle,
       DeptWarStats,
+      SupportRequest,
+      ContentReport,
+      PostComment,
     ]),
     AuthModule,
     NotificationsModule,

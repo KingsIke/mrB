@@ -4,8 +4,9 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, In, IsNull, Not, Repository } from 'typeorm';
-import { User } from './entities/user.entity';
+import { Brackets, In, IsNull, LessThan, Not, Repository } from 'typeorm';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { User, UserStatus, VERIFICATION_GRACE_RESTRICT_REASON } from './entities/user.entity';
 import { UserSearchHistory } from './entities/user-search-history.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -14,8 +15,10 @@ import { Follow } from 'src/follows/entities/follow.entity';
 import { Post } from 'src/posts/entities/post.entity';
 import { GiftTransaction } from 'src/gifts/entities/gift-transaction.entity';
 import { PostLike } from 'src/posts/entities/post-like.entity';
+import { ContentReport, ReportTargetType } from 'src/posts/entities/content-report.entity';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { UpdatePrivacyDto } from './dto/update-privacy.dto';
+import { OtpService } from '../otp/otp.service';
 
 export interface UserProfileStats {
   postsCount: number;
@@ -40,7 +43,10 @@ export class UsersService {
     private readonly giftRepository: Repository<GiftTransaction>,
     @InjectRepository(UserSearchHistory)
     private readonly searchHistoryRepository: Repository<UserSearchHistory>,
+    @InjectRepository(ContentReport)
+    private readonly reportRepository: Repository<ContentReport>,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly otpService: OtpService,
   ) {}
 
   async create(data: Partial<User>): Promise<User> {
@@ -476,4 +482,53 @@ export class UsersService {
     return count > 0;
   }
 
+  /**
+   * A rejected verification comes with a grace period to resubmit (see
+   * admin.service.ts / auth.service.ts submitStudentVerification, which set
+   * and clear verificationGraceExpiresAt). Anyone still `rejected` once that
+   * deadline passes, and still in good standing, gets restricted — this
+   * only touches ACTIVE accounts so it never overrides an unrelated
+   * suspension/ban an admin already applied.
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async escalateExpiredVerificationGrace(): Promise<void> {
+    const expired = await this.userRepository.find({
+      where: {
+        verificationStatus: 'rejected',
+        verificationGraceExpiresAt: LessThan(new Date()),
+        status: UserStatus.ACTIVE,
+      },
+    });
+
+    for (const user of expired) {
+      user.status = UserStatus.RESTRICTED;
+      user.statusReason = VERIFICATION_GRACE_RESTRICT_REASON;
+      user.verificationGraceExpiresAt = null;
+      const saved = await this.userRepository.save(user);
+
+      try {
+        await this.otpService.notifyUserOfAccountStatusChange(
+          saved,
+          UserStatus.RESTRICTED,
+          saved.statusReason ?? undefined,
+        );
+      } catch {
+        // best-effort — the status change is already persisted
+      }
+    }
+  }
+
+  async reportUser(reporterId: string, targetUserId: string, reason: string): Promise<ContentReport> {
+    const target = await this.userRepository.findOne({ where: { id: targetUserId } });
+    if (!target) {
+      throw new NotFoundException(`User with ID "${targetUserId}" not found`);
+    }
+    const report = this.reportRepository.create({
+      reporterId,
+      targetType: ReportTargetType.ACCOUNT,
+      targetId: targetUserId,
+      reason,
+    });
+    return this.reportRepository.save(report);
+  }
 }

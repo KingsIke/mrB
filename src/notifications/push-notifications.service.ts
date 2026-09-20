@@ -151,6 +151,10 @@ const NOTIFICATION_MESSAGES: Record<
     title: '❌ Listing Not Approved',
     body: (_actorName, extra) => `Your hostel listing was not approved.${extra ? ` Reason: ${extra}` : ''}`,
   },
+  [NotificationType.JOB_APPLIED]: {
+    title: 'New Job Application 📋',
+    body: (actorName) => `${actorName} applied to your job posting`,
+  },
 };
 
 const ANDROID_CHANNEL_ID: Record<string, string> = {
@@ -198,6 +202,7 @@ const CHANNEL_MAP: Record<NotificationType, string> = {
   [NotificationType.MARKETPLACE_ITEM_REJECTED]: 'system',
   [NotificationType.HOSTEL_APPROVED]: 'system',
   [NotificationType.HOSTEL_REJECTED]: 'system',
+  [NotificationType.JOB_APPLIED]: 'social',
 };
 
 /** Check if a token is an Expo push token */

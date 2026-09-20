@@ -4,6 +4,7 @@ import { User } from '../../users/entities/user.entity';
 export enum ReportTargetType {
   POST = 'post',
   COMMENT = 'comment',
+  ACCOUNT = 'account',
 }
 
 export enum ReportStatus {

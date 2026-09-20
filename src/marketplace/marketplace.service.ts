@@ -14,6 +14,31 @@ import {
   NotificationType,
 } from '../notifications/entities/notification.entity';
 
+// The seller relation is embedded in every item response. TypeORM's nested
+// `select` doesn't reliably restrict it here, so strip it to display-safe
+// fields in JS after the query instead — the password hash and other
+// account/moderation details must never leave the API.
+const SAFE_SELLER_FIELDS = [
+  'id',
+  'username',
+  'firstName',
+  'lastName',
+  'profilePictureUrl',
+  'profileFrame',
+  'phoneNumber',
+] as const;
+
+function sanitizeSeller<T extends { seller?: User | null }>(item: T): T {
+  if (item.seller) {
+    const safeSeller: Partial<User> = {};
+    for (const field of SAFE_SELLER_FIELDS) {
+      (safeSeller as any)[field] = item.seller[field];
+    }
+    item.seller = safeSeller as User;
+  }
+  return item;
+}
+
 export interface PaginatedMarketplaceResult {
   items: MarketplaceItem[];
   meta: {
@@ -126,7 +151,7 @@ async findAll(options?: {
   const totalPages = Math.ceil(totalItems / take);
 
   return {
-    items,
+    items: items.map(sanitizeSeller),
     meta: {
       totalItems,
       itemCount: items.length,
@@ -162,16 +187,17 @@ async findAll(options?: {
       throw new NotFoundException(`Marketplace item with ID "${id}" not found`);
     }
 
-    return item;
+    return sanitizeSeller(item);
   }
 
   /** All of the current user's own listings, regardless of moderation status. */
   async myListings(userId: string): Promise<MarketplaceItem[]> {
-    return this.marketplaceRepository.find({
+    const items = await this.marketplaceRepository.find({
       where: { sellerId: userId },
       order: { createdAt: 'DESC' },
       relations: ['seller', 'likes'],
     });
+    return items.map(sanitizeSeller);
   }
 
   async update(

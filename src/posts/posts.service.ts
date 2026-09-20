@@ -1216,8 +1216,8 @@ async getFeed(
       comment.userId,
       userId,
       NotificationType.COMMENT_LIKED,
-      NotificationTargetType.COMMENT,
-      commentId,
+      NotificationTargetType.POST,
+      comment.postId,
     );
   }
 

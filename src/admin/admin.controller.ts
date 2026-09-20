@@ -29,6 +29,10 @@ import { UpdateGiftDto } from './dto/update-gift.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { UpdateVerificationDto } from './dto/update-verification.dto';
 import { UpdateStudentUnionDto } from './dto/update-student-union.dto';
+import { UpdateSupportRequestStatusDto } from './dto/update-support-request-status.dto';
+import { UpdateContentReportStatusDto } from './dto/update-content-report-status.dto';
+import { SupportRequestStatus } from '../support/entities/support-request.entity';
+import { ReportStatus } from '../posts/entities/content-report.entity';
 import {
   AdminLeaderboardQueryDto,
   AdminTransactionQueryDto,
@@ -51,7 +55,7 @@ export class AdminController {
 
   @Patch('users/:id/status')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Activate or suspend a user (admin)' })
+  @ApiOperation({ summary: 'Activate, restrict, suspend, or ban a user (admin)' })
   @ApiResponse({ status: 200, description: 'User status updated', type: User })
   setUserStatus(
     @Param('id', ParseUUIDPipe) id: string,
@@ -76,8 +80,8 @@ export class AdminController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Bulk set user status (admin)' })
   @ApiResponse({ status: 200, description: 'Bulk status result' })
-  async bulkSetUserStatus(@Body() body: { ids: string[]; status: string }) {
-    return this.adminService.bulkSetUserStatus(body.ids, body.status);
+  async bulkSetUserStatus(@Body() body: { ids: string[]; status: string; reason?: string }) {
+    return this.adminService.bulkSetUserStatus(body.ids, body.status, body.reason);
   }
 
   @Delete('users')
@@ -464,5 +468,45 @@ export class AdminController {
   @ApiOperation({ summary: 'Cancel multiple battles (admin)' })
   cancelBattles(@Body() body: { ids: string[] }) {
     return this.adminService.cancelBattles(body.ids);
+  }
+
+  // ------------------------------------------------------------------
+  // Support requests ("Report a Problem" submissions)
+  // ------------------------------------------------------------------
+
+  @Get('support-requests')
+  @ApiOperation({ summary: 'List problem reports submitted by users (admin)' })
+  listSupportRequests(@Query('status') status?: SupportRequestStatus) {
+    return this.adminService.listSupportRequests(status);
+  }
+
+  @Patch('support-requests/:id/status')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Update a support request status (admin)' })
+  updateSupportRequestStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateSupportRequestStatusDto,
+  ) {
+    return this.adminService.updateSupportRequestStatus(id, dto.status);
+  }
+
+  // ------------------------------------------------------------------
+  // Content reports (reported posts/comments)
+  // ------------------------------------------------------------------
+
+  @Get('content-reports')
+  @ApiOperation({ summary: 'List reported posts/comments (admin)' })
+  listContentReports(@Query('status') status?: ReportStatus) {
+    return this.adminService.listContentReports(status);
+  }
+
+  @Patch('content-reports/:id/status')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Update a content report status (admin)' })
+  updateContentReportStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateContentReportStatusDto,
+  ) {
+    return this.adminService.updateContentReportStatus(id, dto.status);
   }
 }

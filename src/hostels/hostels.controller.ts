@@ -14,6 +14,8 @@ import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { AllowSuspended } from '../auth/decorators/allow-suspended.decorator';
+import { BlockRestricted } from '../auth/decorators/block-restricted.decorator';
 import { CreateHostelDto } from './dto/create-hostel.dto';
 import { UpdateHostelDto } from './dto/update-hostel.dto';
 import { HostelsService } from './hostels.service';
@@ -119,6 +121,7 @@ async adminBulkDelete(@Body() body: { ids: string[] }) {
 // ── User endpoints ──────────────────────────────────────────────
 
   @Post()
+  @BlockRestricted()
   @UseInterceptors(AnyFilesInterceptor(mediaUploadOptions))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Create a hostel listing' })
@@ -131,6 +134,7 @@ async adminBulkDelete(@Body() body: { ids: string[] }) {
   }
 
   @Get('my-listings')
+  @AllowSuspended()
   @ApiOperation({ summary: 'List my own hostel listings, regardless of moderation status' })
   async myListings(@CurrentUser('userId') userId: string) {
     return this.hostelsService.myListings(userId);

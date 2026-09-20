@@ -14,7 +14,7 @@ import {
   Not,
   Repository,
 } from 'typeorm';
-import { User, UserStatus } from '../users/entities/user.entity';
+import { User, UserStatus, VERIFICATION_GRACE_PERIOD_MS } from '../users/entities/user.entity';
 import { Gift } from '../gifts/entities/gift.entity';
 import { GiftTransaction } from '../gifts/entities/gift-transaction.entity';
 import { Post } from '../posts/entities/post.entity';
@@ -33,6 +33,9 @@ import { JobApplication, ApplicationStatus } from '../jobs/entities/job-applicat
 import { Question, QuestionDifficulty } from '../department-war/entities/question.entity';
 import { Battle, BattleStatus } from '../department-war/entities/battle.entity';
 import { DeptWarStats } from '../department-war/entities/dept-war-stats.entity';
+import { SupportRequest, SupportRequestStatus } from '../support/entities/support-request.entity';
+import { ContentReport, ReportStatus, ReportTargetType } from '../posts/entities/content-report.entity';
+import { PostComment } from '../posts/entities/post-comment.entity';
 import { PastQuestionAnalyticsQueryDto } from './dto/past-question-analytics.dto';
 import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
@@ -140,6 +143,12 @@ export class AdminService {
     private readonly battleRepository: Repository<Battle>,
     @InjectRepository(DeptWarStats)
     private readonly deptWarStatsRepository: Repository<DeptWarStats>,
+    @InjectRepository(SupportRequest)
+    private readonly supportRequestRepository: Repository<SupportRequest>,
+    @InjectRepository(ContentReport)
+    private readonly contentReportRepository: Repository<ContentReport>,
+    @InjectRepository(PostComment)
+    private readonly commentRepository: Repository<PostComment>,
     private readonly notificationsService: NotificationsService,
     private readonly otpService: OtpService,
   ) {}
@@ -153,13 +162,35 @@ export class AdminService {
     if (!user) {
       throw new NotFoundException(`User with ID "${id}" not found`);
     }
+    const previousStatus = user.status;
     user.status = dto.status as UserStatus;
-    return this.userRepository.save(user);
+    user.statusReason = dto.status === 'active' ? null : dto.reason ?? user.statusReason;
+    const saved = await this.userRepository.save(user);
+
+    if (
+      saved.status !== previousStatus &&
+      (saved.status === UserStatus.RESTRICTED ||
+        saved.status === UserStatus.SUSPENDED ||
+        saved.status === UserStatus.BANNED)
+    ) {
+      try {
+        await this.otpService.notifyUserOfAccountStatusChange(
+          saved,
+          saved.status,
+          saved.statusReason ?? undefined,
+        );
+      } catch {
+        // best-effort — the status change is already persisted
+      }
+    }
+
+    return saved;
   }
 
   /**
    * Soft-deletes a user (sets deletedAt) so related rows are not
-   * orphaned. Suspended users and deleted users can no longer sign in.
+   * orphaned. Deleted and banned users can no longer sign in; suspended and
+   * restricted users still can, with reduced access enforced by JwtAuthGuard.
    */
   async deleteUser(id: string): Promise<void> {
     const user = await this.userRepository.findOne({ where: { id } });
@@ -174,7 +205,7 @@ export class AdminService {
   // Bulk user actions
   // ------------------------------------------------------------------
 
-  async bulkSetUserStatus(ids: string[], status: string): Promise<{
+  async bulkSetUserStatus(ids: string[], status: string, reason?: string): Promise<{
     updated: string[];
     notFound: string[];
   }> {
@@ -187,9 +218,28 @@ export class AdminService {
         notFound.push(id);
         continue;
       }
+      const previousStatus = user.status;
       user.status = status as UserStatus;
-      await this.userRepository.save(user);
+      user.statusReason = status === 'active' ? null : reason ?? user.statusReason;
+      const saved = await this.userRepository.save(user);
       updated.push(id);
+
+      if (
+        saved.status !== previousStatus &&
+        (saved.status === UserStatus.RESTRICTED ||
+          saved.status === UserStatus.SUSPENDED ||
+          saved.status === UserStatus.BANNED)
+      ) {
+        try {
+          await this.otpService.notifyUserOfAccountStatusChange(
+            saved,
+            saved.status,
+            saved.statusReason ?? undefined,
+          );
+        } catch {
+          // best-effort — the status change is already persisted
+        }
+      }
     }
 
     return { updated, notFound };
@@ -236,6 +286,8 @@ export class AdminService {
         continue;
       }
       user.verificationStatus = status;
+      user.verificationGraceExpiresAt =
+        status === 'rejected' ? new Date(Date.now() + VERIFICATION_GRACE_PERIOD_MS) : null;
       await this.userRepository.save(user);
       updated.push(id);
     }
@@ -295,6 +347,8 @@ export class AdminService {
       );
     }
     user.verificationStatus = dto.status;
+    user.verificationGraceExpiresAt =
+      dto.status === 'rejected' ? new Date(Date.now() + VERIFICATION_GRACE_PERIOD_MS) : null;
     const saved = await this.userRepository.save(user);
 
     // Notify the student of the decision (in-app + Expo push). Never let a
@@ -1299,5 +1353,101 @@ export class AdminService {
       }
     }
     return { cancelled, errors };
+  }
+
+  // ------------------------------------------------------------------
+  // Support requests ("Report a Problem" submissions)
+  // ------------------------------------------------------------------
+
+  async listSupportRequests(status?: SupportRequestStatus): Promise<SupportRequest[]> {
+    return this.supportRequestRepository.find({
+      where: status ? { status } : {},
+      relations: ['user'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async updateSupportRequestStatus(id: string, status: SupportRequestStatus): Promise<SupportRequest> {
+    const request = await this.supportRequestRepository.findOne({ where: { id } });
+    if (!request) {
+      throw new NotFoundException(`Support request with ID "${id}" not found`);
+    }
+    request.status = status;
+    return this.supportRequestRepository.save(request);
+  }
+
+  // ------------------------------------------------------------------
+  // Content reports (reported posts/comments)
+  // ------------------------------------------------------------------
+
+  async listContentReports(status?: ReportStatus) {
+    const reports = await this.contentReportRepository.find({
+      where: status ? { status } : {},
+      relations: ['reporter'],
+      order: { createdAt: 'DESC' },
+    });
+
+    const postIds = reports.filter((r) => r.targetType === ReportTargetType.POST).map((r) => r.targetId);
+    const commentIds = reports.filter((r) => r.targetType === ReportTargetType.COMMENT).map((r) => r.targetId);
+    const accountIds = reports.filter((r) => r.targetType === ReportTargetType.ACCOUNT).map((r) => r.targetId);
+
+    const posts = postIds.length
+      ? await this.postRepository.find({ where: { id: In(postIds) }, relations: ['user', 'media'] })
+      : [];
+    const comments = commentIds.length
+      ? await this.commentRepository.find({ where: { id: In(commentIds) }, relations: ['user'] })
+      : [];
+    const accounts = accountIds.length
+      ? await this.userRepository.find({ where: { id: In(accountIds) } })
+      : [];
+
+    const postMap = new Map(posts.map((p) => [p.id, p]));
+    const commentMap = new Map(comments.map((c) => [c.id, c]));
+    const accountMap = new Map(accounts.map((a) => [a.id, a]));
+
+    return reports.map((report) => {
+      const post = report.targetType === ReportTargetType.POST ? postMap.get(report.targetId) : undefined;
+      const comment = report.targetType === ReportTargetType.COMMENT ? commentMap.get(report.targetId) : undefined;
+      const reportedUser =
+        report.targetType === ReportTargetType.ACCOUNT ? accountMap.get(report.targetId) : undefined;
+      const media = (post?.media ?? [])
+        .slice()
+        .sort((a, b) => a.order - b.order)
+        .map((m) => ({ url: m.url, type: m.mediaType }));
+      const author = post?.user ?? comment?.user ?? reportedUser;
+      const reportedAccount = author
+        ? {
+            id: author.id,
+            username: author.username,
+            fullName: author.fullName,
+            email: author.email,
+            profilePictureUrl: author.profilePictureUrl,
+            status: author.status,
+          }
+        : null;
+      const targetDeleted =
+        report.targetType === ReportTargetType.POST
+          ? !post
+          : report.targetType === ReportTargetType.COMMENT
+            ? !comment
+            : !reportedUser;
+      return {
+        ...report,
+        targetPreview: post?.description ?? comment?.text ?? null,
+        targetMedia: media,
+        targetDeleted,
+        targetAuthorUsername: author?.username ?? null,
+        reportedAccount,
+      };
+    });
+  }
+
+  async updateContentReportStatus(id: string, status: ReportStatus): Promise<ContentReport> {
+    const report = await this.contentReportRepository.findOne({ where: { id } });
+    if (!report) {
+      throw new NotFoundException(`Content report with ID "${id}" not found`);
+    }
+    report.status = status;
+    return this.contentReportRepository.save(report);
   }
 }
