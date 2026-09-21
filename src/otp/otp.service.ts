@@ -28,6 +28,13 @@ export class OtpService {
         pass: this.configService.get('SMTP_PASS'), // Zoho account password or Application-Specific Password
       },
     });
+
+    // Nodemailer's transporter is an EventEmitter — an 'error' it emits
+    // outside of a sendMail() promise (e.g. a dropped idle connection) would
+    // otherwise be an unhandled error event and crash the whole process.
+    this.transporter.on('error', (err) => {
+      this.logger.error(`SMTP transport error: ${err.message}`, err.stack);
+    });
   }
 
   // ========== GENERATE & SEND OTP (WITH PURPOSE SUPPORT) ==========
@@ -358,7 +365,7 @@ export class OtpService {
   async notifyAdminsOfWithdrawal(
     user: User,
     amountNgn: number,
-    bankDetails: { bankCode: string; accountNumber: string },
+    bankDetails: { bankCode: string; bankName?: string; accountNumber: string; accountName?: string },
     reference: string,
   ): Promise<void> {
     const adminEmails = this.configService
@@ -384,8 +391,9 @@ export class OtpService {
       ['Faculty', (user as any).faculty?.name],
       ['Department', (user as any).department?.name],
       ['Withdrawal amount', formattedAmount],
-      ['Bank code', bankDetails.bankCode],
+      ['Bank', bankDetails.bankName ?? bankDetails.bankCode],
       ['Account number', bankDetails.accountNumber],
+      ['Account name', bankDetails.accountName],
       ['Reference', reference],
     ];
 

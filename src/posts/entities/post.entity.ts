@@ -136,6 +136,9 @@ export class Post {
   @Column({ type: 'int', default: 0 })
   giftsCount: number;
 
+  @Column({ type: 'int', default: 0 })
+  viewsCount: number;
+
   @Column({ type: 'boolean', default: false })
   isHidden: boolean;
 

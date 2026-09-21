@@ -270,4 +270,37 @@ export class PostsController {
   ) {
     return this.postsService.reportPost(userId, id, dto.reason);
   }
+
+  @Get(':id/gifters')
+  @ApiOperation({ summary: 'List users who have gifted my post (owner only)' })
+  async getGifters(
+    @CurrentUser('userId') userId: string,
+    @Param('id') id: string,
+    @Query() pagination: CursorPaginationDto,
+  ) {
+    return this.postsService.getGifters(userId, id, pagination);
+  }
+
+  @HttpPost(':id/view')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Record an impression view for a post' })
+  async recordView(@CurrentUser('userId') userId: string, @Param('id') id: string) {
+    await this.postsService.recordView(userId, id);
+  }
+
+  @Get(':id/viewers')
+  @ApiOperation({ summary: 'List users who have viewed my post (owner only)' })
+  async getViewers(
+    @CurrentUser('userId') userId: string,
+    @Param('id') id: string,
+    @Query() pagination: CursorPaginationDto,
+  ) {
+    return this.postsService.getViewers(userId, id, pagination);
+  }
+
+  @Get(':id/likers')
+  @ApiOperation({ summary: 'List users who have liked this post' })
+  async getLikers(@Param('id') id: string, @Query() pagination: CursorPaginationDto) {
+    return this.postsService.getLikers(id, pagination);
+  }
 }

@@ -1,6 +1,6 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsInt, Length, Min } from 'class-validator';
-import { IsNotEmpty, IsNumber, IsPositive, IsString } from 'class-validator';
+import { IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
 export class PurchaseCoinsDto {
   @ApiProperty({ description: 'Number of Campus Coins to purchase', example: 500, minimum: 1 })
   @IsInt()
@@ -22,14 +22,27 @@ export class WithdrawEarningsDto {
   @IsPositive()
   amountNgn: number;
 
+  @ApiProperty({ description: 'ID of one of the user\'s saved withdrawal accounts', example: 'a1b2c3d4-...' })
+  @IsString()
+  @IsNotEmpty()
+  savedAccountId: string;
+}
+
+export class AddWithdrawalAccountDto {
   @ApiProperty({ description: 'Bank code (e.g., 058 for GTBank)', example: '058' })
   @IsString()
   @IsNotEmpty()
   bankCode: string;
 
+  @ApiPropertyOptional({ description: 'Human-readable bank name', example: 'GTBank' })
+  @IsOptional()
+  @IsString()
+  bankName?: string;
+
   @ApiProperty({ description: '10-digit NUBAN account number', example: '0123456789' })
   @IsString()
   @IsNotEmpty()
+  @Length(10, 10, { message: 'Account number must be exactly 10 digits' })
   accountNumber: string;
 }
 

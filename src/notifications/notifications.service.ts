@@ -130,6 +130,7 @@ export class NotificationsService {
     actorName?: string,
     extra?: string,
     pushData?: Record<string, unknown>,
+    commentId?: string,
   ): Promise<void> {
     // No self-notifications (e.g. liking your own post/comment).
     if (recipientId === actorId) return;
@@ -154,6 +155,7 @@ export class NotificationsService {
       type,
       targetType: targetType ?? null,
       targetId: targetId ?? null,
+      commentId: commentId ?? null,
       message: resolvedName ? this.buildMessage(type, resolvedName) : null,
     });
     await this.notificationRepository.save(notification);
@@ -166,7 +168,7 @@ export class NotificationsService {
           type,
           resolvedName,
           extra,
-          { notificationId: notification.id, type, targetType, targetId, ...pushData },
+          { notificationId: notification.id, type, targetType, targetId, commentId, ...pushData },
         );
       } catch (err) {
         this.logger.warn(`Failed to send push notification: ${err}`);

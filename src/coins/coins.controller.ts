@@ -2,10 +2,12 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   HttpCode,
   HttpStatus,
+  Param,
   Post,
   Query,
   RawBodyRequest,
@@ -18,7 +20,13 @@ import { ApiBearerAuth, ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagg
 import { CoinsService } from './coins.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { ConvertEarningsDto, PurchaseCoinsDto, ResolveAccountDto, WithdrawEarningsDto } from './dto/purchase-coins.dto';
+import {
+  AddWithdrawalAccountDto,
+  ConvertEarningsDto,
+  PurchaseCoinsDto,
+  ResolveAccountDto,
+  WithdrawEarningsDto,
+} from './dto/purchase-coins.dto';
 import { CursorPaginationDto } from '../common/pagination/cursor-pagination.dto';
 
 
@@ -68,15 +76,40 @@ export class CoinsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Withdraw gift earnings (NGN) to bank account' })
+  @ApiOperation({ summary: 'Withdraw gift earnings (NGN) to a saved bank account' })
   async withdrawEarnings(
     @CurrentUser('userId') userId: string,
     @Body() dto: WithdrawEarningsDto,
   ) {
-    return this.coinsService.withdrawEarnings(userId, dto.amountNgn, {
-      bankCode: dto.bankCode,
-      accountNumber: dto.accountNumber,
-    });
+    return this.coinsService.withdrawEarnings(userId, dto.amountNgn, dto.savedAccountId);
+  }
+
+  @Get('withdrawal-accounts')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List my saved withdrawal bank accounts' })
+  async getWithdrawalAccounts(@CurrentUser('userId') userId: string) {
+    return this.coinsService.getWithdrawalAccounts(userId);
+  }
+
+  @Post('withdrawal-accounts')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Save a new withdrawal bank account (max 3, verified via Paystack)' })
+  async addWithdrawalAccount(
+    @CurrentUser('userId') userId: string,
+    @Body() dto: AddWithdrawalAccountDto,
+  ) {
+    return this.coinsService.addWithdrawalAccount(userId, dto);
+  }
+
+  @Delete('withdrawal-accounts/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Delete a saved withdrawal bank account (must keep at least one)' })
+  async deleteWithdrawalAccount(@CurrentUser('userId') userId: string, @Param('id') id: string) {
+    await this.coinsService.deleteWithdrawalAccount(userId, id);
   }
 
   @Post('resolve-account')

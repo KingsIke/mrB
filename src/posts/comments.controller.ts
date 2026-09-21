@@ -20,6 +20,12 @@ export class CommentsController {
     return this.postsService.replyToComment(userId, id, dto);
   }
 
+  @Get(':id')
+  @ApiOperation({ summary: 'Get a single comment (used to resolve notification deep links)' })
+  async getOne(@Param('id') id: string) {
+    return this.postsService.getCommentById(id);
+  }
+
 
   @Get('comments/:commentId/replies')
   @HttpCode(HttpStatus.OK)

@@ -83,6 +83,12 @@ export class Notification {
   @Column({ type: 'uuid', nullable: true })
   targetId: string | null;
 
+  // Set for comment-related notifications (post_commented, comment_liked,
+  // comment_replied) — targetId stays the post id for navigation, this
+  // identifies which comment/reply to scroll to and highlight.
+  @Column({ type: 'uuid', nullable: true })
+  commentId: string | null;
+
   @Column({ type: 'text', nullable: true })
   message: string | null;
 

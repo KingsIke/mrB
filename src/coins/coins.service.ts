@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { CoinBalance } from './entities/coin-balance.entity';
 import { CoinTransaction, CoinTransactionType } from './entities/coin-transaction.entity';
 import { CoinPurchase, CoinPurchaseStatus } from './entities/coin-purchase.entity';
+import { SavedWithdrawalAccount } from './entities/saved-withdrawal-account.entity';
 import { PurchaseCoinsDto, ResolveAccountDto } from './dto/purchase-coins.dto';
 import { PaystackClient } from './paystack.client';
 import { UsersService } from '../users/users.service';
@@ -30,6 +31,8 @@ export class CoinsService {
     private readonly coinTransactionRepository: Repository<CoinTransaction>,
     @InjectRepository(CoinPurchase)
     private readonly coinPurchaseRepository: Repository<CoinPurchase>,
+    @InjectRepository(SavedWithdrawalAccount)
+    private readonly savedWithdrawalAccountRepository: Repository<SavedWithdrawalAccount>,
     private readonly paystackClient: PaystackClient,
     private readonly usersService: UsersService,
     private readonly otpService: OtpService,
@@ -178,15 +181,28 @@ export class CoinsService {
     });
   }
 
-  /** Initiate cash withdrawal from earned gift balance */
+  /** Initiate cash withdrawal from earned gift balance, to one of the user's saved accounts */
   async withdrawEarnings(
     userId: string,
     amountNgn: number,
-    bankDetails: { bankCode: string; accountNumber: string },
+    savedAccountId: string,
   ): Promise<{ success: boolean; reference: string }> {
     if (amountNgn <= 0) {
       throw new BadRequestException('Amount must be greater than zero');
     }
+
+    const savedAccount = await this.savedWithdrawalAccountRepository.findOne({
+      where: { id: savedAccountId, userId },
+    });
+    if (!savedAccount) {
+      throw new NotFoundException('Saved bank account not found');
+    }
+    const bankDetails = {
+      bankCode: savedAccount.bankCode,
+      bankName: savedAccount.bankName ?? undefined,
+      accountNumber: savedAccount.accountNumber,
+      accountName: savedAccount.accountName ?? undefined,
+    };
 
     const result = await this.dataSource.transaction(async (manager) => {
       const balanceRepository = manager.getRepository(CoinBalance);
@@ -220,31 +236,107 @@ export class CoinsService {
     });
 
     // Notify the admin team (to process the payout) and the user (receipt).
-    // Best-effort — email failures must never fail the withdrawal request.
-    try {
-      const user = await this.usersService.findById(userId);
-      if (user) {
-        try {
-          await this.otpService.notifyAdminsOfWithdrawal(
-            user,
-            amountNgn,
-            bankDetails,
-            result.reference,
-          );
-        } catch (err) {
-          this.logger.error('Failed to notify admins of withdrawal', err);
-        }
-        try {
-          await this.otpService.notifyUserOfWithdrawal(user, amountNgn, result.reference);
-        } catch (err) {
-          this.logger.error('Failed to send withdrawal receipt to user', err);
-        }
-      }
-    } catch (err) {
-      this.logger.error('Failed to load user for withdrawal notification', err);
-    }
+    // Fired in the background, not awaited: the withdrawal is already
+    // committed above, so the client must get its success response
+    // immediately regardless of how long email delivery takes or whether
+    // it fails (Zoho hiccups, etc.) — email is best-effort, never a
+    // condition of the withdrawal itself.
+    this.sendWithdrawalNotifications(userId, amountNgn, bankDetails, result.reference).catch((err) => {
+      this.logger.error('Failed to send withdrawal notifications', err);
+    });
+
+    savedAccount.lastUsedAt = new Date();
+    this.savedWithdrawalAccountRepository.save(savedAccount).catch((err) => {
+      this.logger.error('Failed to update saved account lastUsedAt', err);
+    });
 
     return result;
+  }
+
+  private static readonly MAX_SAVED_WITHDRAWAL_ACCOUNTS = 3;
+
+  /** Bank accounts the user has explicitly saved as withdrawal destinations. */
+  async getWithdrawalAccounts(userId: string): Promise<SavedWithdrawalAccount[]> {
+    return this.savedWithdrawalAccountRepository.find({
+      where: { userId },
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  /** Adds a new saved withdrawal account — verifies it resolves to a real
+   * account holder name via Paystack before saving, and caps at 3 per user. */
+  async addWithdrawalAccount(
+    userId: string,
+    input: { bankCode: string; bankName?: string; accountNumber: string },
+  ): Promise<SavedWithdrawalAccount> {
+    const existingCount = await this.savedWithdrawalAccountRepository.count({ where: { userId } });
+    if (existingCount >= CoinsService.MAX_SAVED_WITHDRAWAL_ACCOUNTS) {
+      throw new BadRequestException(
+        `You can save up to ${CoinsService.MAX_SAVED_WITHDRAWAL_ACCOUNTS} bank accounts. Delete one before adding another.`,
+      );
+    }
+
+    const duplicate = await this.savedWithdrawalAccountRepository.findOne({
+      where: { userId, bankCode: input.bankCode, accountNumber: input.accountNumber },
+    });
+    if (duplicate) {
+      throw new BadRequestException('This bank account has already been saved');
+    }
+
+    // Verify the account is real before saving it as a payout destination.
+    const resolved = await this.paystackClient.resolveAccountNumber(input.accountNumber, input.bankCode);
+    if (!resolved?.account_name) {
+      throw new BadRequestException('Could not verify this bank account. Double-check the details and try again.');
+    }
+
+    return this.savedWithdrawalAccountRepository.save(
+      this.savedWithdrawalAccountRepository.create({
+        userId,
+        bankCode: input.bankCode,
+        bankName: input.bankName ?? null,
+        accountNumber: input.accountNumber,
+        accountName: resolved.account_name,
+        lastUsedAt: new Date(),
+      }),
+    );
+  }
+
+  /** Deletes a saved withdrawal account — refuses to remove the last one on file. */
+  async deleteWithdrawalAccount(userId: string, accountId: string): Promise<void> {
+    const account = await this.savedWithdrawalAccountRepository.findOne({
+      where: { id: accountId, userId },
+    });
+    if (!account) {
+      throw new NotFoundException('Saved bank account not found');
+    }
+
+    const totalCount = await this.savedWithdrawalAccountRepository.count({ where: { userId } });
+    if (totalCount <= 1) {
+      throw new BadRequestException('You must keep at least one saved bank account. Add another before removing this one.');
+    }
+
+    await this.savedWithdrawalAccountRepository.remove(account);
+  }
+
+  private async sendWithdrawalNotifications(
+    userId: string,
+    amountNgn: number,
+    bankDetails: { bankCode: string; bankName?: string; accountNumber: string; accountName?: string },
+    reference: string,
+  ): Promise<void> {
+    const user = await this.usersService.findById(userId);
+    if (!user) return;
+
+    try {
+      await this.otpService.notifyAdminsOfWithdrawal(user, amountNgn, bankDetails, reference);
+    } catch (err) {
+      this.logger.error('Failed to notify admins of withdrawal', err);
+    }
+    try {
+      await this.otpService.notifyUserOfWithdrawal(user, amountNgn, reference);
+    } catch (err) {
+      this.logger.error('Failed to send withdrawal receipt to user', err);
+    }
   }
 
   async resolveAccountName(dto: ResolveAccountDto): Promise<{ accountName: string }> {

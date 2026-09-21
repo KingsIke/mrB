@@ -12,7 +12,15 @@ import { UsersService } from '../users/users.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationTargetType, NotificationType } from '../notifications/entities/notification.entity';
 import { GamificationService } from '../gamification/gamification.service';
+import { Level } from '../gamification/entities/level.entity';
 import { FollowsService } from '../follows/follows.service';
+import { GiftTransaction, GiftTargetType } from '../gifts/entities/gift-transaction.entity';
+import {
+  CursorPaginated,
+  CursorPaginationDto,
+  decodeCursor,
+  encodeCursor,
+} from '../common/pagination/cursor-pagination.dto';
 
 const HIGHLIGHT_MIN_LEVEL = 3;
 
@@ -30,6 +38,8 @@ export class StoriesService {
     private readonly storyReactionRepository: Repository<StoryReaction>,
     @InjectRepository(StoryReply)
     private readonly storyReplyRepository: Repository<StoryReply>,
+    @InjectRepository(GiftTransaction)
+    private readonly giftTransactionRepository: Repository<GiftTransaction>,
     private readonly cloudinaryService: CloudinaryService,
     private readonly usersService: UsersService,
     private readonly notificationsService: NotificationsService,
@@ -107,6 +117,7 @@ async getFeed(userId: string): Promise<any[]> {
         'user.firstName',
         'user.lastName',
         'user.profilePictureUrl',
+        'user.profileFrame',
       ])
       .where('story.expiresAt > :now', { now: new Date() })
       .andWhere('story.deletedAt IS NULL')
@@ -191,6 +202,10 @@ async getFeed(userId: string): Promise<any[]> {
 
   async view(userId: string, id: string): Promise<Story> {
     const story = await this.getActiveStoryOrThrow(id);
+    // The owner opening their own story is not a "view" — don't inflate
+    // viewCount or have them show up in their own viewers list.
+    if (userId === story.userId) return story;
+
     const existing = await this.storyViewRepository.findOne({ where: { storyId: id, viewerId: userId } });
     if (!existing) {
       await this.storyViewRepository.save(this.storyViewRepository.create({ storyId: id, viewerId: userId }));
@@ -280,6 +295,186 @@ async getFeed(userId: string): Promise<any[]> {
       throw new ForbiddenException('Only the story owner can view replies');
     }
     return this.storyReplyRepository.find({ where: { storyId: id }, order: { createdAt: 'DESC' } });
+  }
+
+  async getViewers(ownerId: string, id: string, pagination: CursorPaginationDto): Promise<
+    CursorPaginated<{
+      id: string;
+      username: string | null;
+      profilePictureUrl: string | null;
+      profileFrame: string | null;
+      viewedAt: Date;
+      level: Level;
+    }>
+  > {
+    const story = await this.getActiveStoryOrThrow(id);
+    if (story.userId !== ownerId) {
+      throw new ForbiddenException('Only the story owner can see who has viewed this story');
+    }
+
+    const limit = pagination.limit ?? 20;
+    const qb = this.storyViewRepository
+      .createQueryBuilder('view')
+      .leftJoin('view.viewer', 'viewer')
+      // Select columns explicitly to exclude viewer.password entirely
+      .addSelect(['viewer.id', 'viewer.username', 'viewer.profilePictureUrl', 'viewer.profileFrame'])
+      .where('view.storyId = :id', { id })
+      // Defensive: excludes any self-view rows recorded before this guard
+      // existed in view() — the owner should never appear in their own list.
+      .andWhere('view.viewerId != :ownerId', { ownerId });
+
+    if (pagination.cursor) {
+      const { createdAt, id: cursorId } = decodeCursor(pagination.cursor);
+      qb.andWhere('(view.createdAt < :createdAt OR (view.createdAt = :createdAt AND view.id < :cursorId))', {
+        createdAt,
+        cursorId,
+      });
+    }
+
+    qb.orderBy('view.createdAt', 'DESC').addOrderBy('view.id', 'DESC').take(limit + 1);
+
+    const views = await qb.getMany();
+    const hasMore = views.length > limit;
+    const page = hasMore ? views.slice(0, limit) : views;
+    const viewersOnly = page.filter((v) => v.viewer);
+
+    const levelByUserId = await this.gamificationService.getLevelsForUsers(viewersOnly.map((v) => v.viewer.id));
+
+    const items = viewersOnly.map((v) => ({
+      id: v.viewer.id,
+      username: v.viewer.username,
+      profilePictureUrl: v.viewer.profilePictureUrl,
+      profileFrame: v.viewer.profileFrame,
+      viewedAt: v.createdAt,
+      level: levelByUserId.get(v.viewer.id) as Level,
+    }));
+
+    const last = page[page.length - 1];
+    return {
+      items,
+      nextCursor: hasMore && last ? encodeCursor(last.createdAt, last.id) : null,
+    };
+  }
+
+  async getReactions(ownerId: string, id: string, pagination: CursorPaginationDto): Promise<
+    CursorPaginated<{
+      id: string;
+      username: string | null;
+      profilePictureUrl: string | null;
+      profileFrame: string | null;
+      emoji: string;
+      reactedAt: Date;
+      level: Level;
+    }>
+  > {
+    const story = await this.getActiveStoryOrThrow(id);
+    if (story.userId !== ownerId) {
+      throw new ForbiddenException('Only the story owner can see who has reacted to this story');
+    }
+
+    const limit = pagination.limit ?? 20;
+    const qb = this.storyReactionRepository
+      .createQueryBuilder('reaction')
+      .leftJoin('reaction.user', 'user')
+      // Select columns explicitly to exclude user.password entirely
+      .addSelect(['user.id', 'user.username', 'user.profilePictureUrl', 'user.profileFrame'])
+      .where('reaction.storyId = :id', { id });
+
+    if (pagination.cursor) {
+      const { createdAt, id: cursorId } = decodeCursor(pagination.cursor);
+      qb.andWhere(
+        '(reaction.createdAt < :createdAt OR (reaction.createdAt = :createdAt AND reaction.id < :cursorId))',
+        { createdAt, cursorId },
+      );
+    }
+
+    qb.orderBy('reaction.createdAt', 'DESC').addOrderBy('reaction.id', 'DESC').take(limit + 1);
+
+    const reactions = await qb.getMany();
+    const hasMore = reactions.length > limit;
+    const page = hasMore ? reactions.slice(0, limit) : reactions;
+    const reactionsOnly = page.filter((r) => r.user);
+
+    const levelByUserId = await this.gamificationService.getLevelsForUsers(reactionsOnly.map((r) => r.user.id));
+
+    const items = reactionsOnly.map((r) => ({
+      id: r.user.id,
+      username: r.user.username,
+      profilePictureUrl: r.user.profilePictureUrl,
+      profileFrame: r.user.profileFrame,
+      emoji: r.emoji,
+      reactedAt: r.createdAt,
+      level: levelByUserId.get(r.user.id) as Level,
+    }));
+
+    const last = page[page.length - 1];
+    return {
+      items,
+      nextCursor: hasMore && last ? encodeCursor(last.createdAt, last.id) : null,
+    };
+  }
+
+  async getGifters(ownerId: string, id: string, pagination: CursorPaginationDto): Promise<
+    CursorPaginated<{
+      id: string;
+      username: string | null;
+      profilePictureUrl: string | null;
+      profileFrame: string | null;
+      giftName: string;
+      coinsCost: number;
+      giftedAt: Date;
+      level: Level;
+    }>
+  > {
+    const story = await this.getActiveStoryOrThrow(id);
+    if (story.userId !== ownerId) {
+      throw new ForbiddenException('Only the story owner can see who has gifted this story');
+    }
+
+    const limit = pagination.limit ?? 20;
+    const qb = this.giftTransactionRepository
+      .createQueryBuilder('transaction')
+      .leftJoin('transaction.sender', 'sender')
+      .leftJoin('transaction.gift', 'gift')
+      // Select columns explicitly to exclude sender.password entirely
+      .addSelect(['sender.id', 'sender.username', 'sender.profilePictureUrl', 'sender.profileFrame'])
+      .addSelect(['gift.name'])
+      .where('transaction.targetType = :targetType', { targetType: GiftTargetType.STORY })
+      .andWhere('transaction.targetId = :id', { id });
+
+    if (pagination.cursor) {
+      const { createdAt, id: cursorId } = decodeCursor(pagination.cursor);
+      qb.andWhere(
+        '(transaction.createdAt < :createdAt OR (transaction.createdAt = :createdAt AND transaction.id < :cursorId))',
+        { createdAt, cursorId },
+      );
+    }
+
+    qb.orderBy('transaction.createdAt', 'DESC').addOrderBy('transaction.id', 'DESC').take(limit + 1);
+
+    const gifts = await qb.getMany();
+    const hasMore = gifts.length > limit;
+    const page = hasMore ? gifts.slice(0, limit) : gifts;
+    const giftsOnly = page.filter((g) => g.sender);
+
+    const levelByUserId = await this.gamificationService.getLevelsForUsers(giftsOnly.map((g) => g.sender.id));
+
+    const items = giftsOnly.map((g) => ({
+      id: g.sender.id,
+      username: g.sender.username,
+      profilePictureUrl: g.sender.profilePictureUrl,
+      profileFrame: g.sender.profileFrame,
+      giftName: g.gift?.name ?? 'Gift',
+      coinsCost: g.coinsCost,
+      giftedAt: g.createdAt,
+      level: levelByUserId.get(g.sender.id) as Level,
+    }));
+
+    const last = page[page.length - 1];
+    return {
+      items,
+      nextCursor: hasMore && last ? encodeCursor(last.createdAt, last.id) : null,
+    };
   }
 
   async markRepliesRead(ownerId: string, id: string): Promise<void> {

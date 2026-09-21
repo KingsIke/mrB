@@ -12,6 +12,8 @@ import { CommentLike } from './entities/comment-like.entity';
 import { PostReshare } from './entities/post-reshare.entity';
 import { PostFavorite } from './entities/post-favorite.entity';
 import { ContentReport } from './entities/content-report.entity';
+import { PostView } from './entities/post-view.entity';
+import { GiftTransaction } from '../gifts/entities/gift-transaction.entity';
 import { UsersModule } from '../users/users.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { GamificationModule } from '../gamification/gamification.module';
@@ -30,6 +32,8 @@ import { PostsGateway } from './posts.gateway';
       PostReshare,
       PostFavorite,
       ContentReport,
+      PostView,
+      GiftTransaction,
     ]),
     UsersModule,
     NotificationsModule,

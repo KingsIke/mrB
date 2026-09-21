@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -21,8 +22,7 @@ import { CreateStoryDto } from './dto/create-story.dto';
 import { ReactStoryDto } from './dto/react-story.dto';
 import { ReplyStoryDto } from './dto/reply-story.dto';
 import { mediaUploadOptions } from '../common/multer/media-upload.config';
-import { RequirePerk } from '../gamification/decorators/require-perk.decorator';
-import { PerkGuard } from '../gamification/guards/perk.guard';
+import { CursorPaginationDto } from '../common/pagination/cursor-pagination.dto';
 
 @ApiTags('Stories')
 @Controller('stories')
@@ -33,8 +33,6 @@ export class StoriesController {
 
   @Post()
   @BlockRestricted()
-  @RequirePerk('Story highlights')
-  @UseGuards(PerkGuard)
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @UseInterceptors(FileInterceptor('media', mediaUploadOptions))
   @ApiConsumes('multipart/form-data')
@@ -89,6 +87,36 @@ export class StoriesController {
   @ApiOperation({ summary: 'List replies to my story (owner only)' })
   async getReplies(@CurrentUser('userId') userId: string, @Param('id') id: string) {
     return this.storiesService.getReplies(userId, id);
+  }
+
+  @Get(':id/viewers')
+  @ApiOperation({ summary: 'List users who have viewed my story (owner only)' })
+  async getViewers(
+    @CurrentUser('userId') userId: string,
+    @Param('id') id: string,
+    @Query() pagination: CursorPaginationDto,
+  ) {
+    return this.storiesService.getViewers(userId, id, pagination);
+  }
+
+  @Get(':id/reactions')
+  @ApiOperation({ summary: 'List users who have reacted to my story (owner only)' })
+  async getReactions(
+    @CurrentUser('userId') userId: string,
+    @Param('id') id: string,
+    @Query() pagination: CursorPaginationDto,
+  ) {
+    return this.storiesService.getReactions(userId, id, pagination);
+  }
+
+  @Get(':id/gifters')
+  @ApiOperation({ summary: 'List users who have gifted my story (owner only)' })
+  async getGifters(
+    @CurrentUser('userId') userId: string,
+    @Param('id') id: string,
+    @Query() pagination: CursorPaginationDto,
+  ) {
+    return this.storiesService.getGifters(userId, id, pagination);
   }
 
   @Patch(':id/replies/read-all')

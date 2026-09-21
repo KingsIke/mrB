@@ -6,6 +6,7 @@ import { Story } from './entities/story.entity';
 import { StoryView } from './entities/story-view.entity';
 import { StoryReaction } from './entities/story-reaction.entity';
 import { StoryReply } from './entities/story-reply.entity';
+import { GiftTransaction } from '../gifts/entities/gift-transaction.entity';
 import { UsersModule } from '../users/users.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { GamificationModule } from '../gamification/gamification.module';
@@ -13,7 +14,7 @@ import { FollowsModule } from '../follows/follows.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Story, StoryView, StoryReaction, StoryReply]),
+    TypeOrmModule.forFeature([Story, StoryView, StoryReaction, StoryReply, GiftTransaction]),
     UsersModule,
     NotificationsModule,
     GamificationModule,

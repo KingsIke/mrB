@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Level } from './entities/level.entity';
 import { UserXp } from './entities/user-xp.entity';
 import { XpTransaction, XpSource } from './entities/xp-transaction.entity';
@@ -105,6 +105,31 @@ export class GamificationService {
     // Falls back to level 1 if levels haven't been seeded yet, rather than throwing
     // mid-request for what's ultimately a reference-data gap.
     return level ?? (await this.levelRepository.findOne({ where: { level: 1 } })) ?? SEED_LEVELS[0] as Level;
+  }
+
+  /**
+   * Batched equivalent of calling getMe(userId).level for each id — used by
+   * paginated "who viewed/liked/reacted/gifted" lists so a page of N people
+   * costs 2 queries total instead of N calls into gamification.
+   */
+  async getLevelsForUsers(userIds: string[]): Promise<Map<string, Level>> {
+    const uniqueIds = [...new Set(userIds)];
+    const result = new Map<string, Level>();
+    if (uniqueIds.length === 0) return result;
+
+    const [userXps, levels] = await Promise.all([
+      this.userXpRepository.find({ where: { userId: In(uniqueIds) } }),
+      this.levelRepository.find(),
+    ]);
+
+    const resolve = (totalXp: number): Level | undefined =>
+      levels.find((l) => l.minXp <= totalXp && (l.maxXp == null || l.maxXp >= totalXp));
+
+    for (const ux of userXps) {
+      const level = resolve(ux.totalXp);
+      if (level) result.set(ux.userId, level);
+    }
+    return result;
   }
 
   async awardXp(

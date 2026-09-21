@@ -24,6 +24,7 @@ import {
   ContentReport,
   ReportTargetType,
 } from "./entities/content-report.entity";
+import { PostView } from "./entities/post-view.entity";
 import { CreatePostDto } from "./dto/create-post.dto";
 import { UpdatePostDto } from "./dto/update-post.dto";
 import { FeedQueryDto, FeedTab } from "./dto/feed-query.dto";
@@ -36,7 +37,9 @@ import {
   NotificationType,
 } from "../notifications/entities/notification.entity";
 import { GamificationService } from "../gamification/gamification.service";
+import { Level } from "../gamification/entities/level.entity";
 import { XpSource } from "../gamification/entities/xp-transaction.entity";
+import { GiftTransaction, GiftTargetType } from "../gifts/entities/gift-transaction.entity";
 import { FollowsService } from "../follows/follows.service";
 import {
   CursorPaginated,
@@ -65,6 +68,10 @@ export class PostsService {
     private readonly favoriteRepository: Repository<PostFavorite>,
     @InjectRepository(ContentReport)
     private readonly reportRepository: Repository<ContentReport>,
+    @InjectRepository(GiftTransaction)
+    private readonly giftTransactionRepository: Repository<GiftTransaction>,
+    @InjectRepository(PostView)
+    private readonly postViewRepository: Repository<PostView>,
     private readonly cloudinaryService: CloudinaryService,
     private readonly usersService: UsersService,
     private readonly notificationsService: NotificationsService,
@@ -106,6 +113,13 @@ export class PostsService {
       throw new NotFoundException(`Comment with ID "${id}" not found`);
     }
     return comment;
+  }
+
+  /** Used to resolve a comment/reply notification deep link: if the target
+   * isn't among a post's top-level comments, this tells the client which
+   * parent comment to expand (parentCommentId) to reveal it. */
+  async getCommentById(id: string): Promise<PostComment> {
+    return this.getCommentOrThrow(id);
   }
 
   async create(
@@ -359,6 +373,192 @@ private async getPostOrThrow(id: string, currentUserId?: string): Promise<Post> 
 
   async incrementGiftsCount(postId: string): Promise<void> {
     await this.postRepository.increment({ id: postId }, "giftsCount", 1);
+  }
+
+  async getGifters(ownerId: string, id: string, pagination: CursorPaginationDto): Promise<
+    CursorPaginated<{
+      id: string;
+      username: string | null;
+      profilePictureUrl: string | null;
+      profileFrame: string | null;
+      giftName: string;
+      coinsCost: number;
+      giftedAt: Date;
+      level: Level;
+    }>
+  > {
+    const post = await this.getPostOrThrow(id);
+    if (post.userId !== ownerId) {
+      throw new ForbiddenException('Only the post owner can see who has gifted this post');
+    }
+
+    const limit = pagination.limit ?? 20;
+    const qb = this.giftTransactionRepository
+      .createQueryBuilder('transaction')
+      .leftJoin('transaction.sender', 'sender')
+      .leftJoin('transaction.gift', 'gift')
+      // Select columns explicitly to exclude sender.password entirely
+      .addSelect(['sender.id', 'sender.username', 'sender.profilePictureUrl', 'sender.profileFrame'])
+      .addSelect(['gift.name'])
+      .where('transaction.targetType = :targetType', { targetType: GiftTargetType.POST })
+      .andWhere('transaction.targetId = :id', { id });
+
+    if (pagination.cursor) {
+      const { createdAt, id: cursorId } = decodeCursor(pagination.cursor);
+      qb.andWhere(
+        '(transaction.createdAt < :createdAt OR (transaction.createdAt = :createdAt AND transaction.id < :cursorId))',
+        { createdAt, cursorId },
+      );
+    }
+
+    qb.orderBy('transaction.createdAt', 'DESC').addOrderBy('transaction.id', 'DESC').take(limit + 1);
+
+    const gifts = await qb.getMany();
+    const hasMore = gifts.length > limit;
+    const page = hasMore ? gifts.slice(0, limit) : gifts;
+    const giftsOnly = page.filter((g) => g.sender);
+
+    const levelByUserId = await this.gamificationService.getLevelsForUsers(giftsOnly.map((g) => g.sender.id));
+
+    const items = giftsOnly.map((g) => ({
+      id: g.sender.id,
+      username: g.sender.username,
+      profilePictureUrl: g.sender.profilePictureUrl,
+      profileFrame: g.sender.profileFrame,
+      giftName: g.gift?.name ?? 'Gift',
+      coinsCost: g.coinsCost,
+      giftedAt: g.createdAt,
+      level: levelByUserId.get(g.sender.id) as Level,
+    }));
+
+    const last = page[page.length - 1];
+    return {
+      items,
+      nextCursor: hasMore && last ? encodeCursor(last.createdAt, last.id) : null,
+    };
+  }
+
+  async recordView(userId: string, id: string): Promise<void> {
+    const post = await this.getPostOrThrow(id);
+    // The owner viewing their own post is not a "view" — don't inflate
+    // viewsCount or have them show up in their own viewers list.
+    if (userId === post.userId) return;
+
+    const existing = await this.postViewRepository.findOne({ where: { postId: id, viewerId: userId } });
+    if (!existing) {
+      await this.postViewRepository.save(this.postViewRepository.create({ postId: id, viewerId: userId }));
+      await this.postRepository.increment({ id }, 'viewsCount', 1);
+    }
+  }
+
+  async getViewers(ownerId: string, id: string, pagination: CursorPaginationDto): Promise<
+    CursorPaginated<{
+      id: string;
+      username: string | null;
+      profilePictureUrl: string | null;
+      profileFrame: string | null;
+      viewedAt: Date;
+      level: Level;
+    }>
+  > {
+    const post = await this.getPostOrThrow(id);
+    if (post.userId !== ownerId) {
+      throw new ForbiddenException('Only the post owner can see who has viewed this post');
+    }
+
+    const limit = pagination.limit ?? 20;
+    const qb = this.postViewRepository
+      .createQueryBuilder('view')
+      .leftJoin('view.viewer', 'viewer')
+      // Select columns explicitly to exclude viewer.password entirely
+      .addSelect(['viewer.id', 'viewer.username', 'viewer.profilePictureUrl', 'viewer.profileFrame'])
+      .where('view.postId = :id', { id })
+      .andWhere('view.viewerId != :ownerId', { ownerId });
+
+    if (pagination.cursor) {
+      const { createdAt, id: cursorId } = decodeCursor(pagination.cursor);
+      qb.andWhere('(view.createdAt < :createdAt OR (view.createdAt = :createdAt AND view.id < :cursorId))', {
+        createdAt,
+        cursorId,
+      });
+    }
+
+    qb.orderBy('view.createdAt', 'DESC').addOrderBy('view.id', 'DESC').take(limit + 1);
+
+    const views = await qb.getMany();
+    const hasMore = views.length > limit;
+    const page = hasMore ? views.slice(0, limit) : views;
+    const viewersOnly = page.filter((v) => v.viewer);
+
+    const levelByUserId = await this.gamificationService.getLevelsForUsers(viewersOnly.map((v) => v.viewer.id));
+
+    const items = viewersOnly.map((v) => ({
+      id: v.viewer.id,
+      username: v.viewer.username,
+      profilePictureUrl: v.viewer.profilePictureUrl,
+      profileFrame: v.viewer.profileFrame,
+      viewedAt: v.createdAt,
+      level: levelByUserId.get(v.viewer.id) as Level,
+    }));
+
+    const last = page[page.length - 1];
+    return {
+      items,
+      nextCursor: hasMore && last ? encodeCursor(last.createdAt, last.id) : null,
+    };
+  }
+
+  async getLikers(id: string, pagination: CursorPaginationDto): Promise<
+    CursorPaginated<{
+      id: string;
+      username: string | null;
+      profilePictureUrl: string | null;
+      profileFrame: string | null;
+      likedAt: Date;
+      level: Level;
+    }>
+  > {
+    await this.getPostOrThrow(id);
+
+    const limit = pagination.limit ?? 20;
+    const qb = this.postLikeRepository
+      .createQueryBuilder('like')
+      .leftJoin('like.user', 'user')
+      // Select columns explicitly to exclude user.password entirely
+      .addSelect(['user.id', 'user.username', 'user.profilePictureUrl', 'user.profileFrame'])
+      .where('like.postId = :id', { id });
+
+    if (pagination.cursor) {
+      const { createdAt, id: cursorId } = decodeCursor(pagination.cursor);
+      qb.andWhere('(like.createdAt < :createdAt OR (like.createdAt = :createdAt AND like.id < :cursorId))', {
+        createdAt,
+        cursorId,
+      });
+    }
+
+    qb.orderBy('like.createdAt', 'DESC').addOrderBy('like.id', 'DESC').take(limit + 1);
+
+    const likes = await qb.getMany();
+    const hasMore = likes.length > limit;
+    const page = hasMore ? likes.slice(0, limit) : likes;
+    const likesOnly = page.filter((l) => l.user);
+
+    const levelByUserId = await this.gamificationService.getLevelsForUsers(likesOnly.map((l) => l.user.id));
+
+    const items = likesOnly.map((l) => ({
+      id: l.user.id,
+      username: l.user.username,
+      profilePictureUrl: l.user.profilePictureUrl,
+      profileFrame: l.user.profileFrame,
+      likedAt: l.createdAt,
+      level: levelByUserId.get(l.user.id) as Level,
+    }));
+
+    const last = page[page.length - 1];
+    return {
+      items,
+      nextCursor: hasMore && last ? encodeCursor(last.createdAt, last.id) : null,
+    };
   }
 
   async remove(userId: string, id: string): Promise<void> {
@@ -906,6 +1106,10 @@ async getFeed(
       NotificationType.POST_COMMENTED,
       NotificationTargetType.POST,
       postId,
+      undefined,
+      undefined,
+      undefined,
+      saved.id,
     );
 
     // If replying to someone else's comment, also notify the parent comment author
@@ -918,6 +1122,10 @@ async getFeed(
           NotificationType.COMMENT_REPLIED,
           NotificationTargetType.POST,
           postId,
+          undefined,
+          undefined,
+          undefined,
+          saved.id,
         );
       }
     }
@@ -1011,6 +1219,7 @@ async getFeed(
         "user.lastName",
         "user.username",
         "user.profilePictureUrl",
+        "user.profileFrame",
       ])
       .leftJoin(
         CommentLike,
@@ -1113,6 +1322,7 @@ async getFeed(
         "user.lastName",
         "user.username",
         "user.profilePictureUrl",
+        "user.profileFrame",
       ])
       .leftJoin(
         CommentLike,
@@ -1218,6 +1428,10 @@ async getFeed(
       NotificationType.COMMENT_LIKED,
       NotificationTargetType.POST,
       comment.postId,
+      undefined,
+      undefined,
+      undefined,
+      commentId,
     );
   }
 
