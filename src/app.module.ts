@@ -36,13 +36,16 @@ import { CallsModule } from './calls/calls.module';
 import { CoinBattleModule } from './coin-battle/coin-battle.module';
 import { PuzzleModule } from './puzzle/puzzle.module';
 import { WordGameModule } from './word-game/word-game.module';
-import { PrecisionTapModule } from './precision-tap/precision-tap.module';
+import { WhotModule } from './whot/whot.module';
+import { ReportsModule } from './reports/reports.module';
+import { validateEnv } from './config/env.validation';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+      validate: validateEnv,
     }),
     ThrottlerModule.forRoot([
       {
@@ -90,7 +93,8 @@ import { PrecisionTapModule } from './precision-tap/precision-tap.module';
     CoinBattleModule,
     PuzzleModule,
     WordGameModule,
-    PrecisionTapModule,
+    WhotModule,
+    ReportsModule,
   ],
 })
 export class AppModule {}

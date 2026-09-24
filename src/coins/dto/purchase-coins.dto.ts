@@ -1,11 +1,21 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, Length, Min } from 'class-validator';
+import { IsInt, Length, Min, IsIn, Max } from 'class-validator';
 import { IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
 export class PurchaseCoinsDto {
   @ApiProperty({ description: 'Number of Campus Coins to purchase', example: 500, minimum: 1 })
   @IsInt()
   @Min(1)
+  @Max(100000)
   coins: number;
+
+  @ApiProperty({
+    description: 'Set to "web" to return to the 3names.ng top-up page after paying',
+    required: false,
+    enum: ['web'],
+  })
+  @IsOptional()
+  @IsIn(['web'])
+  returnTo?: 'web';
 }
 
 

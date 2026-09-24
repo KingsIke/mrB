@@ -11,6 +11,7 @@ import axios from "axios";
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import * as bcrypt from "bcrypt";
+import { randomUUID } from "crypto";
 import { UsersService } from "../users/users.service";
 import { OtpService } from "../otp/otp.service";
 import { CloudinaryService } from "../cloudinary/cloudinary.service";
@@ -44,6 +45,9 @@ import { OtpPurpose } from "src/otp/entities/otp.entity";
 import { GamificationService } from '../gamification/gamification.service';
 import { SchoolsService } from "src/schools/schools.service";
 import { GroupsService } from "../groups/groups.service";
+import { RefreshTokenService } from "./refresh-token.service";
+import { AccountDeletionService } from "./account-deletion.service";
+import { TokenType, assertTokenType } from "./token-types";
 
 export interface VerifyOtpResponse {
   message: string;
@@ -117,6 +121,8 @@ export class AuthService {
     private readonly schoolsService: SchoolsService,
     private readonly gamificationService: GamificationService,
     private readonly groupsService: GroupsService,
+    private readonly refreshTokenService: RefreshTokenService,
+    private readonly accountDeletionService: AccountDeletionService,
   ) {}
 
   // Helper function to extract School, Faculty, and Department details safely
@@ -648,16 +654,27 @@ export class AuthService {
       const payload = this.jwtService.verify(refreshToken, {
         secret: this.configService.get("JWT_REFRESH_SECRET"),
       });
+      assertTokenType(payload, TokenType.REFRESH);
 
       const user = await this.usersService.findById(payload.sub);
       if (!user || user.status === UserStatus.BANNED || user.deletedAt) {
         throw new UnauthorizedException("Invalid refresh token");
       }
 
+      // Rotation: each refresh token works once.
+      await this.refreshTokenService.consume(user.id, refreshToken);
       return this.generateTokens(user);
     } catch {
       throw new UnauthorizedException("Invalid or expired refresh token");
     }
+  }
+
+  // ========== LOGOUT ==========
+  async logout(refreshToken: string): Promise<{ success: boolean }> {
+    if (refreshToken) {
+      await this.refreshTokenService.revoke(refreshToken);
+    }
+    return { success: true };
   }
 
   // ========== CHECK ONBOARDING STATUS ==========
@@ -733,9 +750,9 @@ export class AuthService {
     }
 
     const resetToken = this.jwtService.sign(
-      { sub: user.id, email: user.email, type: "password-reset" },
+      { sub: user.id, email: user.email, type: TokenType.PASSWORD_RESET },
       {
-        secret: this.configService.get("JWT_REFRESH_SECRET"),
+        secret: this.configService.get("JWT_RESET_SECRET"),
         expiresIn: "15m",
       },
     );
@@ -753,10 +770,10 @@ export class AuthService {
     let payload: any;
     try {
       payload = this.jwtService.verify(resetPasswordDto.resetToken, {
-        secret: this.configService.get("JWT_REFRESH_SECRET"),
+        secret: this.configService.get("JWT_RESET_SECRET"),
       });
 
-      if (payload.type !== "password-reset") {
+      if (payload.type !== TokenType.PASSWORD_RESET) {
         throw new UnauthorizedException("Invalid token type");
       }
     } catch (error) {
@@ -778,6 +795,7 @@ export class AuthService {
       isEmailVerified: true,
       passwordChangedAt: new Date(),
     });
+    await this.refreshTokenService.revokeAllForUser(user.id);
 
     const tokens = await this.generateTokens(updatedUser);
     const onboardingRequired = !updatedUser.isOnboardingComplete;
@@ -829,6 +847,7 @@ export class AuthService {
       password: hashedPassword,
       passwordChangedAt: new Date(),
     });
+    await this.refreshTokenService.revokeAllForUser(user.id);
 
     const tokens = await this.generateTokens(updatedUser);
     const onboardingRequired = !updatedUser.isOnboardingComplete;
@@ -1009,6 +1028,7 @@ export class AuthService {
       // Invalidate all existing sessions immediately
       passwordChangedAt: new Date(),
     });
+    await this.refreshTokenService.revokeAllForUser(user.id);
 
     return {
       message:
@@ -1044,22 +1064,11 @@ export class AuthService {
       throw new BadRequestException("Current password is incorrect");
     }
 
-    // Anonymize the account so it can no longer be used or identified, but
-    // keep the row so related content (posts, comments, etc.) stays intact.
-    const deletedSuffix = `${Date.now()}-${user.id.slice(0, 8)}`;
-    await this.usersService.update(user.id, {
-      email: `deleted-${deletedSuffix}@deleted.local`,
-      username: `deleted_${deletedSuffix}`,
-      phoneNumber: `deleted-${deletedSuffix}`,
-      firstName: "Deleted",
-      lastName: "User",
-      bio: "",
-      profilePictureUrl: "",
-      deletedAt: new Date(),
-      deactivatedAt: null,
-      // Invalidate all existing sessions immediately
-      passwordChangedAt: new Date(),
-    });
+    // Delete the user's personal data and content, and scrub the users row.
+    // The row stays (financial records reference it) but no longer
+    // identifies anyone. Setting passwordChangedAt ends every session.
+    await this.accountDeletionService.deleteUserData(user);
+    await this.refreshTokenService.revokeAllForUser(user.id);
 
     return {
       message:
@@ -1384,11 +1393,16 @@ export class AuthService {
       username: user.username,
     };
 
-    const accessToken = this.jwtService.sign(payload);
-    const refreshToken = this.jwtService.sign(payload, {
+    const accessToken = this.jwtService.sign({ ...payload, type: TokenType.ACCESS });
+    const refreshToken = this.jwtService.sign({ ...payload, type: TokenType.REFRESH }, {
       secret: this.configService.get("JWT_REFRESH_SECRET"),
       expiresIn: this.configService.get("JWT_REFRESH_EXPIRATION", "7d"),
+      // Unique per token, so two tokens issued in the same second never hash alike.
+      jwtid: randomUUID(),
     });
+
+    const { exp } = this.jwtService.decode(refreshToken) as { exp: number };
+    await this.refreshTokenService.store(user.id, refreshToken, new Date(exp * 1000));
 
     return { accessToken, refreshToken };
   }

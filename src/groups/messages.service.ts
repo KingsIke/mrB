@@ -17,6 +17,8 @@ import { resolveAttachmentType } from '../common/multer/message-attachment-uploa
 import { CursorPaginated, CursorPaginationDto, decodeCursor, encodeCursor } from '../common/pagination/cursor-pagination.dto';
 import { GroupsService } from './groups.service';
 import { GroupsGateway, GroupWebSocketEvents } from './groups.gateway';
+import { FollowsService } from '../follows/follows.service';
+import { ContentReport, ReportTargetType } from '../posts/entities/content-report.entity';
 
 const EDIT_WINDOW_MS = 30 * 60 * 1000;
 
@@ -37,6 +39,9 @@ export class MessagesService {
     private readonly groupsGateway: GroupsGateway,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(ContentReport)
+    private readonly reportRepository: Repository<ContentReport>,
+    private readonly followsService: FollowsService,
   ) {}
 
 private async getMessageOrThrow(messageId: string, currentUserId?: string): Promise<GroupMessage> {
@@ -112,6 +117,14 @@ private async getMessageOrThrow(messageId: string, currentUserId?: string): Prom
       const isAdmin = await this.groupsService.isAdmin(groupId, userId);
       if (!isAdmin) {
         throw new ForbiddenException('This group is locked; only admins can post');
+      }
+    }
+
+    // A block in either direction stops a 1:1 conversation.
+    if (group.type === GroupType.DIRECT && group.sourceId) {
+      const otherUserId = group.sourceId.split(':').find((id) => id !== userId);
+      if (otherUserId && (await this.followsService.isBlocked(userId, otherUserId))) {
+        throw new ForbiddenException('You cannot message this user');
       }
     }
 
@@ -215,6 +228,35 @@ private async getMessageOrThrow(messageId: string, currentUserId?: string): Prom
     const saved = await this.messageRepository.save(message);
     this.groupsGateway.broadcastToGroup(message.groupId, GroupWebSocketEvents.MESSAGE_EDITED, saved);
     return saved;
+  }
+
+  async reportMessage(userId: string, groupId: string, messageId: string, reason: string): Promise<ContentReport> {
+    const message = await this.messageRepository.findOne({
+      where: { id: messageId, groupId },
+      relations: { attachments: true },
+    });
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+    if (!(await this.groupsService.isMember(groupId, userId))) {
+      throw new ForbiddenException('You are not a member of this group');
+    }
+    if (message.userId === userId) {
+      throw new BadRequestException('You cannot report your own message');
+    }
+
+    // Keep a copy: the sender can delete the message after it is reported.
+    const attachmentUrls = (message.attachments ?? []).map((a) => a.url);
+    const snapshot = [message.content, ...attachmentUrls].filter(Boolean).join('\n');
+
+    const report = this.reportRepository.create({
+      reporterId: userId,
+      targetType: ReportTargetType.MESSAGE,
+      targetId: messageId,
+      reason,
+      targetSnapshot: snapshot || null,
+    });
+    return this.reportRepository.save(report);
   }
 
   async deleteMessage(userId: string, messageId: string): Promise<void> {

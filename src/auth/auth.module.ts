@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
@@ -13,6 +14,9 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { SchoolsModule } from 'src/schools/schools.module';
 import { GroupsModule } from '../groups/groups.module';
+import { RefreshToken } from './entities/refresh-token.entity';
+import { RefreshTokenService } from './refresh-token.service';
+import { AccountDeletionService } from './account-deletion.service';
 
 @Module({
   imports: [
@@ -23,6 +27,7 @@ import { GroupsModule } from '../groups/groups.module';
     GamificationModule,
     SchoolsModule,
     GroupsModule,
+    TypeOrmModule.forFeature([RefreshToken]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -35,8 +40,8 @@ import { GroupsModule } from '../groups/groups.module';
       }),
     }),
   ],
-  providers: [AuthService, JwtStrategy, JwtAuthGuard],
+  providers: [AuthService, RefreshTokenService, AccountDeletionService, JwtStrategy, JwtAuthGuard],
   controllers: [AuthController],
-  exports: [AuthService, JwtAuthGuard],
+  exports: [AuthService, RefreshTokenService, JwtAuthGuard],
 })
 export class AuthModule {}

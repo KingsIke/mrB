@@ -32,11 +32,13 @@ export class PaystackClient {
     email: string,
     amountKobo: number,
     reference: string,
+    callbackUrl?: string,
   ): Promise<InitializeTransactionResult> {
     const { data } = await this.http.post('/transaction/initialize', {
       email,
       amount: amountKobo,
       reference,
+      ...(callbackUrl ? { callback_url: callbackUrl } : {}),
     });
 
     return {

@@ -5,6 +5,7 @@ import { WsException } from '@nestjs/websockets';
 import { Socket } from 'socket.io';
 import { JwtPayload } from '../strategies/jwt.strategy';
 import { UserStatus } from '../../users/entities/user.entity';
+import { TokenType, isTokenType } from '../token-types';
 
 export function extractTokenFromSocket(client: Socket): string | null {
   // 1. Check auth object or headers
@@ -35,9 +36,10 @@ export async function verifySocketToken(
   if (!token) return null;
 
   try {
-    return await jwtService.verifyAsync<JwtPayload>(token, {
+    const payload = await jwtService.verifyAsync<JwtPayload>(token, {
       secret: configService.get('JWT_SECRET'),
     });
+    return isTokenType(payload, TokenType.ACCESS) ? payload : null;
   } catch {
     return null;
   }

@@ -29,6 +29,7 @@
     "seed:departments": "ts-node -r tsconfig-paths/register src/database/seeds/seed-departments.ts",
     "seed:levels": "ts-node -r tsconfig-paths/register src/database/seeds/seed-levels.ts",
     "seed:gifts": "ts-node -r tsconfig-paths/register src/database/seeds/seed-gifts.ts",
+    "seed:reviewer": "ts-node -r tsconfig-paths/register src/database/seeds/seed-reviewer.ts",
     "seed:all": "npm run seed:schools && npm run seed:faculties && npm run seed:departments && npm run seed:levels && npm run seed:gifts"
   },
   "dependencies": {

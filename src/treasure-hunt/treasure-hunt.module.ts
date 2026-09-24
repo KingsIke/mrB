@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { JwtModule } from '@nestjs/jwt';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TreasureHuntService } from './treasure-hunt.service';
 import { TreasureHuntController } from './treasure-hunt.controller';
 import { TreasureHunt } from './entities/treasure-hunt.entity';
@@ -14,6 +16,13 @@ import { User } from '../users/entities/user.entity';
     TypeOrmModule.forFeature([TreasureHunt, TreasureClaim, Gift, User]),
     CoinsModule,
     NotificationsModule,
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        secret: configService.get('JWT_SECRET'),
+      }),
+    }),
   ],
   controllers: [TreasureHuntController],
   providers: [TreasureHuntService],

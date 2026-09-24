@@ -57,8 +57,9 @@ export class TreasureHuntController {
   async claim(
     @CurrentUser('userId') userId: string,
     @Param('huntId', ParseUUIDPipe) huntId: string,
+    @Body('claimToken') claimToken: string,
   ) {
-    return this.service.claim(userId, huntId);
+    return this.service.claim(userId, huntId, claimToken);
   }
 
   // ── Admin endpoints ─────────────────────────────────────────────

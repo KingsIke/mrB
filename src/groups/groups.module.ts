@@ -21,10 +21,11 @@ import { FacultiesModule } from '../faculties/faculties.module';
 import { DepartmentsModule } from '../departments/departments.module';
 import { GamificationModule } from 'src/gamification/gamification.module';
 import { FollowsModule } from '../follows/follows.module';
+import { ContentReport } from '../posts/entities/content-report.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Group, GroupMember, GroupMessage, MessageAttachment, MessageReaction, User]),
+    TypeOrmModule.forFeature([Group, GroupMember, GroupMessage, MessageAttachment, MessageReaction, User, ContentReport]),
     UsersModule,
     NotificationsModule,
     SchoolsModule,

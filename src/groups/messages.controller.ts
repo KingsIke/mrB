@@ -7,6 +7,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { SendMessageDto } from './dto/send-message.dto';
 import { EditMessageDto } from './dto/edit-message.dto';
 import { AddReactionDto } from './dto/add-reaction.dto';
+import { ReportContentDto } from '../posts/dto/report-content.dto';
 import { CursorPaginationDto } from '../common/pagination/cursor-pagination.dto';
 import { messageAttachmentUploadOptions } from '../common/multer/message-attachment-upload.config';
 
@@ -64,6 +65,17 @@ export class MessagesController {
   @ApiOperation({ summary: 'Delete a message (own message, or any message as group admin)' })
   async remove(@CurrentUser('userId') userId: string, @Param('messageId') messageId: string) {
     await this.messagesService.deleteMessage(userId, messageId);
+  }
+
+  @Post(':messageId/report')
+  @ApiOperation({ summary: 'Report a message in a group or 1:1 conversation' })
+  async report(
+    @CurrentUser('userId') userId: string,
+    @Param('groupId') groupId: string,
+    @Param('messageId') messageId: string,
+    @Body() dto: ReportContentDto,
+  ) {
+    return this.messagesService.reportMessage(userId, groupId, messageId, dto.reason);
   }
 
   @Post(':messageId/reactions')

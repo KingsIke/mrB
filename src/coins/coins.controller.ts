@@ -12,6 +12,7 @@ import {
   Query,
   RawBodyRequest,
   Req,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { Request } from 'express';
@@ -50,6 +51,24 @@ export class CoinsController {
   @ApiOperation({ summary: 'List my transaction history' })
   async listTransactions(@CurrentUser('userId') userId: string, @Query() pagination: CursorPaginationDto) {
     return this.coinsService.listTransactions(userId, pagination);
+  }
+
+  @Get('purchases/:reference')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Status of one of my Paystack coin purchases' })
+  async purchaseStatus(@CurrentUser('userId') userId: string, @Param('reference') reference: string) {
+    return this.coinsService.getPurchaseStatus(userId, reference);
+  }
+
+  @Post('iap/sync')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Credit any App Store / Google Play coin purchases not yet credited' })
+  async syncStorePurchases(@CurrentUser('userId') userId: string) {
+    const { credited } = await this.coinsService.syncRevenueCatPurchases(userId);
+    return { credited, balance: await this.coinsService.getBalance(userId) };
   }
 
   @Post('purchase')
@@ -120,6 +139,22 @@ export class CoinsController {
 async resolveAccountName(@Body() dto: ResolveAccountDto) {
   return this.coinsService.resolveAccountName(dto);
 }
+
+  // Unguarded like the Paystack webhook: RevenueCat calls it with no user
+  // session. Authenticity is checked against REVENUECAT_WEBHOOK_AUTH.
+  @Post('webhook/revenuecat')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'RevenueCat webhook (App Store / Google Play purchases)' })
+  async revenueCatWebhook(
+    @Req() request: Request,
+    @Headers('authorization') authorization: string,
+  ) {
+    if (!this.coinsService.verifyRevenueCatAuth(authorization)) {
+      throw new UnauthorizedException('Invalid webhook authorization');
+    }
+    await this.coinsService.handleRevenueCatEvent(request.body?.event);
+    return { received: true };
+  }
 
   // Intentionally unguarded — Paystack calls this with no user session, so JwtAuthGuard
   // doesn't apply here. Authenticity is instead verified via the HMAC signature below.

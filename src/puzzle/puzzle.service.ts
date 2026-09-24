@@ -42,7 +42,19 @@ export class PuzzleService {
   private async getOrCreate(userId: string): Promise<PuzzleScore> {
     let row = await this.puzzleScoreRepository.findOne({ where: { userId } });
     if (!row) {
-      row = this.puzzleScoreRepository.create({ userId, milestonesAwarded: [] });
+      // `create()` only assigns the properties it's given — it does NOT pull
+      // the column `default:` values into the in-memory entity. Seed the
+      // counters here, otherwise the `Math.max()`/`+= 1` below run against
+      // `undefined` and produce NaN, which Postgres rejects on save. That
+      // meant a player's very first game was never persisted at all, leaving
+      // their personal best blank and the leaderboard empty.
+      row = this.puzzleScoreRepository.create({
+        userId,
+        bestScore: 0,
+        highestTile: 0,
+        gamesPlayed: 0,
+        milestonesAwarded: [],
+      });
     }
     // simple-array can come back as [] correctly, but guard against a stray
     // null from a fresh row that hasn't been through the column transformer yet

@@ -90,6 +90,10 @@ export class User {
   @Column({ type: 'boolean', default: false })
   isEmailVerified: boolean;
 
+  /** A synthetic system account (e.g. the Whot "Computer" opponent) — never a real student. */
+  @Column({ type: 'boolean', default: false })
+  isBot: boolean;
+
   // === Onboarding Fields ===
   @Column({ type: 'varchar', length: 100, nullable: true })
   firstName: string;

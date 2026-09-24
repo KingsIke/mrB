@@ -12,7 +12,7 @@ import { CoinBattle, CoinBattleStatus, PLATFORM_FEE_PERCENT } from './entities/c
 import { CoinBattleAnswer } from './entities/coin-battle-answer.entity';
 import { Question, QuestionDifficulty } from '../department-war/entities/question.entity';
 import { User } from '../users/entities/user.entity';
-import { CoinsService } from '../coins/coins.service';
+import { CoinsService, notEnoughGameCoinsMessage, stakeableCoins } from '../coins/coins.service';
 import { CoinTransactionType } from '../coins/entities/coin-transaction.entity';
 import { CoinBattleGateway } from './coin-battle.gateway';
 import { ChallengeDto, SubmitCoinBattleAnswerDto } from './dto/coin-battle.dto';
@@ -209,8 +209,8 @@ export class CoinBattleService {
 
     // Check user has enough coins
     const balance = await this.coinsService.getBalance(userId);
-    if (Number(balance.balance) < stake) {
-      throw new BadRequestException(`Insufficient coins. You need ${stake} coins but have ${balance.balance}`);
+    if (stakeableCoins(balance) < stake) {
+      throw new BadRequestException(notEnoughGameCoinsMessage(stake, stakeableCoins(balance)));
     }
 
     // Deduct coins (escrow)
@@ -323,14 +323,14 @@ export class CoinBattleService {
       if (busyUserIds.has(c.id)) continue;
       if (!this.gateway.isUserOnline(c.id)) continue;
       const balance = await this.coinsService.getBalance(c.id);
-      if (Number(balance.balance) < stake) continue;
+      if (stakeableCoins(balance) < stake) continue;
       results.push({
         id: c.id,
         username: c.username,
         firstName: c.firstName,
         lastName: c.lastName,
         profilePictureUrl: c.profilePictureUrl,
-        balance: Number(balance.balance),
+        balance: stakeableCoins(balance),
       });
     }
     return results;
@@ -371,8 +371,8 @@ export class CoinBattleService {
 
     // Escrow the challenger's coins up front
     const balance = await this.coinsService.getBalance(userId);
-    if (Number(balance.balance) < dto.stake) {
-      throw new BadRequestException(`Insufficient coins. You need ${dto.stake} coins but have ${balance.balance}`);
+    if (stakeableCoins(balance) < dto.stake) {
+      throw new BadRequestException(notEnoughGameCoinsMessage(dto.stake, stakeableCoins(balance)));
     }
     await this.coinsService.debitBalance(userId, dto.stake, CoinTransactionType.BATTLE_ENTRY);
 
@@ -437,8 +437,8 @@ export class CoinBattleService {
 
     // Escrow the acceptor's coins
     const balance = await this.coinsService.getBalance(userId);
-    if (Number(balance.balance) < battle.stake) {
-      throw new BadRequestException(`Insufficient coins. You need ${battle.stake} coins but have ${balance.balance}`);
+    if (stakeableCoins(balance) < battle.stake) {
+      throw new BadRequestException(notEnoughGameCoinsMessage(battle.stake, stakeableCoins(balance)));
     }
     await this.coinsService.debitBalance(userId, battle.stake, CoinTransactionType.BATTLE_ENTRY);
 
@@ -641,8 +641,8 @@ export class CoinBattleService {
 
     // Check player2 balance (they might have spent coins while queued)
     const p2Balance = await this.coinsService.getBalance(player2Id);
-    if (Number(p2Balance.balance) < stake) {
-      this.logger.warn(`tryMatch: player2 ${player2Id} has insufficient coins (${p2Balance.balance} < ${stake})`);
+    if (stakeableCoins(p2Balance) < stake) {
+      this.logger.warn(`tryMatch: player2 ${player2Id} has insufficient coins (${stakeableCoins(p2Balance)} < ${stake})`);
       await this.refundPlayer(player1Id, stake, 'opponent_insufficient_funds');
       battle.status = CoinBattleStatus.CANCELLED;
       await this.battleRepo.save(battle);

@@ -242,6 +242,16 @@ export class AuthController {
     return this.authService.refreshTokens(refreshToken);
   }
 
+  // No JwtAuthGuard: logging out must work even with an expired access
+  // token. Possessing the refresh token is the credential.
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Revoke a refresh token (sign out this device)' })
+  @ApiResponse({ status: 200, description: 'Refresh token revoked' })
+  async logout(@Body('refreshToken') refreshToken: string) {
+    return this.authService.logout(refreshToken);
+  }
+
   @Post('onboarding')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(

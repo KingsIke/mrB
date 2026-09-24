@@ -5,6 +5,12 @@ export enum ReportTargetType {
   POST = 'post',
   COMMENT = 'comment',
   ACCOUNT = 'account',
+  MESSAGE = 'message',
+  STORY = 'story',
+  MARKETPLACE_ITEM = 'marketplace_item',
+  HOSTEL_LISTING = 'hostel_listing',
+  PAST_QUESTION = 'past_question',
+  MATERIAL = 'material',
 }
 
 export enum ReportStatus {
@@ -32,6 +38,14 @@ export class ContentReport {
 
   @Column({ type: 'text' })
   reason: string;
+
+  /** Who posted the reported content. Set for types reported via POST /reports. */
+  @Column({ type: 'uuid', nullable: true })
+  targetOwnerId: string | null;
+
+  /** Copy of the reported content at report time (chat messages can be deleted afterwards). */
+  @Column({ type: 'text', nullable: true })
+  targetSnapshot: string | null;
 
   @Column({ type: 'enum', enum: ReportStatus, default: ReportStatus.PENDING })
   status: ReportStatus;

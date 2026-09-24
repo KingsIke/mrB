@@ -375,7 +375,7 @@ export class OtpService {
       .filter(Boolean);
 
     if (adminEmails.length === 0) {
-      return; // No admins configured to notify
+      return; 
     }
 
     const from = this.configService.get('SMTP_FROM', this.configService.get('SMTP_USER'));

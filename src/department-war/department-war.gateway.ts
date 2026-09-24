@@ -14,6 +14,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { extractTokenFromSocket, isSocketAccessBlocked } from '../auth/guards/ws-jwt.guard';
+import { TokenType, assertTokenType } from '../auth/token-types';
 import { User } from '../users/entities/user.entity';
 
 export enum WarWebSocketEvents {
@@ -72,6 +73,7 @@ export class DepartmentWarGateway implements OnGatewayConnection, OnGatewayDisco
         const payload = await this.jwtService.verifyAsync(token, {
           secret: this.configService.get('JWT_SECRET'),
         });
+        assertTokenType(payload, TokenType.ACCESS);
         const userId = payload.sub || payload.id;
         if (userId) {
           const user = await this.userRepo.findOne({

@@ -4,6 +4,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../../users/users.service';
 import { User, UserStatus } from '../../users/entities/user.entity';
+import { TokenType, isTokenType } from '../token-types';
 
 export interface JwtPayload {
   sub: string;
@@ -11,6 +12,7 @@ export interface JwtPayload {
   username: string;
    schoolId?:string
   iat?: number;
+  type?: TokenType;
 }
 
 export interface AuthenticatedUser {
@@ -35,6 +37,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload): Promise<AuthenticatedUser> {
+    if (!isTokenType(payload, TokenType.ACCESS)) {
+      throw new UnauthorizedException('Invalid token type');
+    }
+
     const user = await this.usersService.findById(payload.sub);
     if (!user) {
       throw new UnauthorizedException('User not found');

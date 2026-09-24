@@ -63,6 +63,9 @@ import { CoinBattle } from '../coin-battle/entities/coin-battle.entity';
 import { CoinBattleAnswer } from '../coin-battle/entities/coin-battle-answer.entity';
 import { AppDownloadClick } from '../admin/entities/app-download-click.entity';
 import { PastQuestion } from '../past-questions/entities/past-question.entity';
+import { WhotTable } from '../whot/entities/whot-table.entity';
+import { WhotTablePlayer } from '../whot/entities/whot-table-player.entity';
+import { RefreshToken } from '../auth/entities/refresh-token.entity';
 
 config();
 
@@ -138,6 +141,9 @@ export default new DataSource({
     CoinBattleAnswer,
     AppDownloadClick,
     PastQuestion,
+    WhotTable,
+    WhotTablePlayer,
+    RefreshToken,
   ],
   migrations: ['src/database/migrations/*{.ts,.js}'],
   synchronize: false,

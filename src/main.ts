@@ -36,10 +36,15 @@ async function bootstrap() {
   );
 
   // CORS
+  // Browsers may call the API only from these origins in production (the
+  // 3names.ng website: coin top-up and download tracking). The mobile app
+  // isn't a browser, so CORS doesn't apply to it.
+  const corsOrigins = (process.env.CORS_ORIGINS ?? 'https://www.3names.ng,https://3names.ng')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: process.env.NODE_ENV === 'production'
-      ? ['https://yourschoolapp.com']
-      : true,
+    origin: process.env.NODE_ENV === 'production' ? corsOrigins : true,
     credentials: true,
   });
 

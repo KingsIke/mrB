@@ -6,12 +6,14 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import {
   Between,
+  EntityTarget,
   FindOptionsWhere,
   In,
   IsNull,
   LessThanOrEqual,
   MoreThanOrEqual,
   Not,
+  ObjectLiteral,
   Repository,
 } from 'typeorm';
 import { User, UserStatus, VERIFICATION_GRACE_PERIOD_MS } from '../users/entities/user.entity';
@@ -35,7 +37,11 @@ import { Battle, BattleStatus } from '../department-war/entities/battle.entity';
 import { DeptWarStats } from '../department-war/entities/dept-war-stats.entity';
 import { SupportRequest, SupportRequestStatus } from '../support/entities/support-request.entity';
 import { ContentReport, ReportStatus, ReportTargetType } from '../posts/entities/content-report.entity';
+import { MarketplaceItem } from '../marketplace/entities/marketplace-item.entity';
+import { HostelListing } from '../hostels/entities/hostel-listing.entity';
+import { CampusMaterial } from '../materials/entities/campus-material.entity';
 import { PostComment } from '../posts/entities/post-comment.entity';
+import { GroupMessage } from '../groups/entities/group-message.entity';
 import { PastQuestionAnalyticsQueryDto } from './dto/past-question-analytics.dto';
 import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
@@ -114,6 +120,15 @@ export type AdminTransactionRow =
       createdAt: string;
     };
 
+/** Report types filed via POST /reports, mapped to the entity they point at. */
+const GENERIC_REPORT_ENTITIES: Partial<Record<ReportTargetType, EntityTarget<ObjectLiteral>>> = {
+  [ReportTargetType.STORY]: Story,
+  [ReportTargetType.MARKETPLACE_ITEM]: MarketplaceItem,
+  [ReportTargetType.HOSTEL_LISTING]: HostelListing,
+  [ReportTargetType.PAST_QUESTION]: PastQuestion,
+  [ReportTargetType.MATERIAL]: CampusMaterial,
+};
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -149,6 +164,8 @@ export class AdminService {
     private readonly contentReportRepository: Repository<ContentReport>,
     @InjectRepository(PostComment)
     private readonly commentRepository: Repository<PostComment>,
+    @InjectRepository(GroupMessage)
+    private readonly groupMessageRepository: Repository<GroupMessage>,
     private readonly notificationsService: NotificationsService,
     private readonly otpService: OtpService,
   ) {}
@@ -1377,7 +1394,8 @@ export class AdminService {
   }
 
   // ------------------------------------------------------------------
-  // Content reports (reported posts/comments)
+  // Content reports (posts, comments, accounts, chat messages, and the
+  // stories/listings/documents reported via POST /reports)
   // ------------------------------------------------------------------
 
   async listContentReports(status?: ReportStatus) {
@@ -1390,6 +1408,7 @@ export class AdminService {
     const postIds = reports.filter((r) => r.targetType === ReportTargetType.POST).map((r) => r.targetId);
     const commentIds = reports.filter((r) => r.targetType === ReportTargetType.COMMENT).map((r) => r.targetId);
     const accountIds = reports.filter((r) => r.targetType === ReportTargetType.ACCOUNT).map((r) => r.targetId);
+    const messageIds = reports.filter((r) => r.targetType === ReportTargetType.MESSAGE).map((r) => r.targetId);
 
     const posts = postIds.length
       ? await this.postRepository.find({ where: { id: In(postIds) }, relations: ['user', 'media'] })
@@ -1400,21 +1419,46 @@ export class AdminService {
     const accounts = accountIds.length
       ? await this.userRepository.find({ where: { id: In(accountIds) } })
       : [];
+    const messages = messageIds.length
+      ? await this.groupMessageRepository.find({ where: { id: In(messageIds) }, relations: ['user'] })
+      : [];
+
+    // Types reported via POST /reports store the owner on the report, so only
+    // the owner and whether the content still exists need looking up.
+    const genericReports = reports.filter((r) => GENERIC_REPORT_ENTITIES[r.targetType]);
+    const ownerIds = [...new Set(genericReports.map((r) => r.targetOwnerId).filter((id): id is string => !!id))];
+    const owners = ownerIds.length ? await this.userRepository.find({ where: { id: In(ownerIds) } }) : [];
+    const ownerMap = new Map(owners.map((o) => [o.id, o]));
+    const existingGenericTargets = new Set<string>();
+    for (const [type, entity] of Object.entries(GENERIC_REPORT_ENTITIES)) {
+      const ids = genericReports.filter((r) => r.targetType === type).map((r) => r.targetId);
+      if (!ids.length) continue;
+      const found = (await this.contentReportRepository.manager
+        .getRepository(entity)
+        .find({ where: { id: In(ids) } })) as { id: string; deletedAt?: Date | null }[];
+      for (const row of found) {
+        if (!row.deletedAt) existingGenericTargets.add(`${type}:${row.id}`);
+      }
+    }
 
     const postMap = new Map(posts.map((p) => [p.id, p]));
     const commentMap = new Map(comments.map((c) => [c.id, c]));
     const accountMap = new Map(accounts.map((a) => [a.id, a]));
+    const messageMap = new Map(messages.map((m) => [m.id, m]));
 
     return reports.map((report) => {
       const post = report.targetType === ReportTargetType.POST ? postMap.get(report.targetId) : undefined;
       const comment = report.targetType === ReportTargetType.COMMENT ? commentMap.get(report.targetId) : undefined;
       const reportedUser =
         report.targetType === ReportTargetType.ACCOUNT ? accountMap.get(report.targetId) : undefined;
+      const message = report.targetType === ReportTargetType.MESSAGE ? messageMap.get(report.targetId) : undefined;
       const media = (post?.media ?? [])
         .slice()
         .sort((a, b) => a.order - b.order)
         .map((m) => ({ url: m.url, type: m.mediaType }));
-      const author = post?.user ?? comment?.user ?? reportedUser;
+      const isGeneric = !!GENERIC_REPORT_ENTITIES[report.targetType];
+      const genericOwner = isGeneric && report.targetOwnerId ? ownerMap.get(report.targetOwnerId) : undefined;
+      const author = post?.user ?? comment?.user ?? message?.user ?? reportedUser ?? genericOwner;
       const reportedAccount = author
         ? {
             id: author.id,
@@ -1425,15 +1469,18 @@ export class AdminService {
             status: author.status,
           }
         : null;
-      const targetDeleted =
-        report.targetType === ReportTargetType.POST
+      const targetDeleted = isGeneric
+        ? !existingGenericTargets.has(`${report.targetType}:${report.targetId}`)
+        : report.targetType === ReportTargetType.POST
           ? !post
           : report.targetType === ReportTargetType.COMMENT
             ? !comment
-            : !reportedUser;
+            : report.targetType === ReportTargetType.MESSAGE
+              ? !message || message.isDeleted
+              : !reportedUser;
       return {
         ...report,
-        targetPreview: post?.description ?? comment?.text ?? null,
+        targetPreview: post?.description ?? comment?.text ?? message?.content ?? report.targetSnapshot ?? null,
         targetMedia: media,
         targetDeleted,
         targetAuthorUsername: author?.username ?? null,

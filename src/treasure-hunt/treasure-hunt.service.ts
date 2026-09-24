@@ -7,11 +7,13 @@ import {
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MoreThanOrEqual, Repository, LessThanOrEqual, IsNull } from 'typeorm';
+import { MoreThanOrEqual, Repository, LessThanOrEqual, IsNull, DataSource, QueryFailedError } from 'typeorm';
+import { JwtService } from '@nestjs/jwt';
+import { TokenType, assertTokenType } from '../auth/token-types';
 import { TreasureHunt } from './entities/treasure-hunt.entity';
 import { TreasureClaim } from './entities/treasure-claim.entity';
 import { Gift } from '../gifts/entities/gift.entity';
-import { CoinsService, COIN_RATE_NGN } from '../coins/coins.service';
+import { CoinsService } from '../coins/coins.service';
 import { CoinTransactionType } from '../coins/entities/coin-transaction.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
@@ -48,7 +50,12 @@ export class TreasureHuntService {
     private readonly coinsService: CoinsService,
     private readonly notificationsService: NotificationsService,
     private readonly pushNotificationsService: PushNotificationsService,
+    private readonly jwtService: JwtService,
+    private readonly dataSource: DataSource,
   ) {}
+
+  /** How long a claim ticket from checkAvailable stays valid. */
+  private static readonly CLAIM_TICKET_TTL = '10m';
 
   // ── User-facing ───────────────────────────────────────────────────
 
@@ -106,70 +113,76 @@ export class TreasureHuntService {
           }
         : null,
       claimsRemaining: hunt.maxClaims - hunt.claimedCount,
+      // Proof that this user was shown this hunt on its screen. claim()
+      // requires it, so knowing a hunt id alone isn't enough to claim.
+      claimToken: this.jwtService.sign(
+        { sub: userId, huntId: hunt.id, type: TokenType.TREASURE_CLAIM },
+        { expiresIn: TreasureHuntService.CLAIM_TICKET_TTL },
+      ),
     };
   }
 
   /**
-   * Claim a treasure hunt. Awards the gift + bonus coins.
+   * Claim a treasure hunt. The reward (gift value + bonus coins) is paid in
+   * bonus coins: usable in games, never giftable or withdrawable, so the
+   * hunt can't be farmed for cash.
    */
-  async claim(userId: string, huntId: string) {
+  async claim(userId: string, huntId: string, claimToken: string) {
+    try {
+      const ticket = this.jwtService.verify(claimToken ?? '');
+      assertTokenType(ticket, TokenType.TREASURE_CLAIM);
+      if (ticket.sub !== userId || ticket.huntId !== huntId) throw new Error('mismatch');
+    } catch {
+      throw new BadRequestException('Open the screen where the treasure is hidden to claim it.');
+    }
+
     const hunt = await this.huntRepo.findOne({
       where: { id: huntId },
       relations: ['gift'],
     });
     if (!hunt) throw new NotFoundException('Treasure hunt not found');
-    if (!hunt.isActive) throw new BadRequestException('This treasure hunt is no longer active');
 
-    const now = new Date();
-    if (hunt.startsAt && hunt.startsAt > now) {
-      throw new BadRequestException('This treasure hunt has not started yet');
+    // One atomic step: take a claim slot only if the hunt is live and has
+    // slots left, and record the claim. The unique (userId, treasureHuntId)
+    // constraint rolls the whole thing back on a repeat claim, so parallel
+    // requests can't exceed maxClaims or claim twice.
+    try {
+      await this.dataSource.transaction(async (manager) => {
+        const now = new Date();
+        const taken = await manager
+          .createQueryBuilder()
+          .update(TreasureHunt)
+          .set({ claimedCount: () => '"claimedCount" + 1' })
+          .where('id = :huntId', { huntId })
+          .andWhere('"isActive" = true')
+          .andWhere('"claimedCount" < "maxClaims"')
+          .andWhere('("startsAt" IS NULL OR "startsAt" <= :now)', { now })
+          .andWhere('("expiresAt" IS NULL OR "expiresAt" > :now)', { now })
+          .execute();
+        if (!taken.affected) {
+          throw new BadRequestException('This treasure is no longer available');
+        }
+        await manager.getRepository(TreasureClaim).insert({ userId, treasureHuntId: huntId });
+      });
+    } catch (err) {
+      if (err instanceof QueryFailedError && (err as any).driverError?.code === '23505') {
+        throw new ConflictException('You have already claimed this treasure');
+      }
+      throw err;
     }
-    if (hunt.expiresAt && hunt.expiresAt <= now) {
-      throw new BadRequestException('This treasure hunt has expired');
-    }
-    if (hunt.claimedCount >= hunt.maxClaims) {
-      throw new BadRequestException('All claims have been used');
-    }
 
-    // Check if already claimed
-    const existing = await this.claimRepo.findOne({
-      where: { userId, treasureHuntId: huntId },
-    });
-    if (existing) {
-      throw new ConflictException('You have already claimed this treasure');
-    }
-
-    // Create claim record
-    await this.claimRepo.save(
-      this.claimRepo.create({ userId, treasureHuntId: huntId }),
-    );
-
-    // Increment claimed count
-    hunt.claimedCount += 1;
-    await this.huntRepo.save(hunt);
-
-    // Award bonus coins to spendable balance if any
-    if (hunt.bonusCoins > 0) {
+    const giftCoins = hunt.gift && hunt.gift.coinCost > 0 ? hunt.gift.coinCost : 0;
+    const rewardCoins = giftCoins + (hunt.bonusCoins > 0 ? hunt.bonusCoins : 0);
+    if (rewardCoins > 0) {
+      // TREASURE_HUNT_REWARD lands in bonusBalance (see coins.service.ts).
       await this.coinsService.creditBalance(
         userId,
-        hunt.bonusCoins,
+        rewardCoins,
         CoinTransactionType.TREASURE_HUNT_REWARD,
         huntId,
       );
     }
 
-    // Credit the gift's coin value to the user's withdrawable (earned) balance
-    if (hunt.gift && hunt.gift.coinCost > 0) {
-      const earnedNgn = hunt.gift.coinCost * COIN_RATE_NGN;
-      await this.coinsService.creditEarnedBalance(
-        userId,
-        earnedNgn,
-        huntId,
-        CoinTransactionType.TREASURE_HUNT_REWARD,
-      );
-    }
-
-    const earnedNgn = hunt.gift && hunt.gift.coinCost > 0 ? hunt.gift.coinCost * COIN_RATE_NGN : 0;
 
     return {
       success: true,
@@ -181,12 +194,13 @@ export class TreasureHuntService {
             videoUrl: hunt.gift.videoUrl,
           }
         : null,
-      bonusCoins: hunt.bonusCoins,
-      earnedNgn,
+      bonusCoins: rewardCoins,
+      // Kept for older app versions; treasure rewards no longer pay cash.
+      earnedNgn: 0,
       message: hunt.gift
-        ? `You found a ${hunt.gift.name}!${earnedNgn > 0 ? ` + ₦${earnedNgn} earned!` : ''}${hunt.bonusCoins > 0 ? ` + ${hunt.bonusCoins} bonus coins!` : ''}`
-        : hunt.bonusCoins > 0
-          ? `You won ${hunt.bonusCoins} bonus coins!`
+        ? `You found a ${hunt.gift.name}!${rewardCoins > 0 ? ` +${rewardCoins} coins` : ''}`
+        : rewardCoins > 0
+          ? `You won ${rewardCoins} coins!`
           : 'Treasure claimed!',
     };
   }

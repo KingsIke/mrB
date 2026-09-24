@@ -14,6 +14,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { extractTokenFromSocket, isSocketAccessBlocked } from '../auth/guards/ws-jwt.guard';
+import { TokenType, assertTokenType } from '../auth/token-types';
 import { CoinBattle, CoinBattleStatus } from './entities/coin-battle.entity';
 import { User } from '../users/entities/user.entity';
 
@@ -74,6 +75,7 @@ export class CoinBattleGateway implements OnGatewayConnection, OnGatewayDisconne
         const payload = await this.jwtService.verifyAsync(token, {
           secret: this.configService.get('JWT_SECRET'),
         });
+        assertTokenType(payload, TokenType.ACCESS);
         const userId = payload.sub || payload.id;
         if (userId) {
           const user = await this.userRepo.findOne({
