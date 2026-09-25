@@ -137,7 +137,7 @@ export class WordGameService {
 
       if (attempt.won) {
         xpAwarded = WIN_XP_BY_GUESS_COUNT[attempt.guesses.length - 1] ?? 10;
-        await this.gamificationService.awardXp(userId, XpSource.WORD_GAME_WIN, xpAwarded, String(puzzleNumber));
+        await this.gamificationService.awardXp(userId, XpSource.WORD_GAME_WIN, xpAwarded);
 
         if (stats.currentStreak > 0 && stats.currentStreak % 7 === 0) {
           await this.gamificationService.awardXp(userId, XpSource.STREAK_BONUS, 50);

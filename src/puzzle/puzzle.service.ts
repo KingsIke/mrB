@@ -7,6 +7,7 @@ import { GamificationService } from '../gamification/gamification.service';
 import { XpSource } from '../gamification/entities/xp-transaction.entity';
 import { CoinsService } from '../coins/coins.service';
 import { CoinTransactionType } from '../coins/entities/coin-transaction.entity';
+import { Level } from '../gamification/entities/level.entity';
 
 // XP awarded the first time a player ever reaches each milestone tile.
 const MILESTONE_XP: Record<number, number> = {
@@ -83,7 +84,7 @@ export class PuzzleService {
     for (const milestone of newMilestones) {
       const amount = MILESTONE_XP[milestone] ?? 0;
       if (amount > 0) {
-        await this.gamificationService.awardXp(userId, XpSource.PUZZLE_MILESTONE, amount, String(milestone));
+        await this.gamificationService.awardXp(userId, XpSource.PUZZLE_MILESTONE, amount);
         xpAwarded += amount;
       }
     }
@@ -117,6 +118,7 @@ export class PuzzleService {
     profileFrame: string | null;
     bestScore: number;
     highestTile: number;
+    level: Level | null;
   }>> {
     const rows = await this.puzzleScoreRepository
       .createQueryBuilder('score')
@@ -128,6 +130,8 @@ export class PuzzleService {
       .take(limit)
       .getMany();
 
+    const levelByUserId = await this.gamificationService.getLevelsForUsers(rows.map((row) => row.userId));
+
     return rows.map((row) => ({
       userId: row.userId,
       username: row.user?.username ?? null,
@@ -135,6 +139,7 @@ export class PuzzleService {
       profileFrame: row.user?.profileFrame ?? null,
       bestScore: row.bestScore,
       highestTile: row.highestTile,
+      level: levelByUserId.get(row.userId) ?? null,
     }));
   }
 }
