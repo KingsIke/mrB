@@ -19,6 +19,7 @@ import {
   AuthResponse,
   DeactivatedAccountInfo,
   TwoFactorRequiredInfo,
+  TwoFactorSetupRequiredInfo,
 } from './auth.service';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { LoginDto } from '../users/dto/login.dto';
@@ -31,6 +32,7 @@ import { ReactivateAccountDto } from '../users/dto/reactivate-account.dto';
 import { GoogleLoginDto } from './dto/google-login.dto';
 import { Verify2faDto } from '../users/dto/verify-2fa.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { TwoFactorSetupGuard } from './guards/two-factor-setup.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { AllowSuspended } from './decorators/allow-suspended.decorator';
 import { documentUploadOptions } from '../common/multer/document-upload.config';
@@ -146,7 +148,7 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid credentials or unverified email' })
   async login(
     @Body() loginDto: LoginDto,
-  ): Promise<AuthResponse | DeactivatedAccountInfo | TwoFactorRequiredInfo> {
+  ): Promise<AuthResponse | DeactivatedAccountInfo | TwoFactorRequiredInfo | TwoFactorSetupRequiredInfo> {
     return this.authService.login(loginDto);
   }
 
@@ -162,7 +164,9 @@ export class AuthController {
   // ========== TWO-FACTOR AUTHENTICATION ==========
   @Post('2fa/login-verify')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Complete a 2FA-protected login with the emailed code' })
+  @ApiOperation({
+    summary: 'Complete a 2FA-protected login with the authenticator-app code (or the emailed fallback code)',
+  })
   @ApiResponse({ status: 200, description: '2FA verified, logged in' })
   @ApiResponse({ status: 401, description: 'Invalid or expired code' })
   async verify2faLogin(@Body() verify2faDto: Verify2faDto): Promise<AuthResponse> {
@@ -213,6 +217,48 @@ export class AuthController {
     @Body() body: { code: string },
   ) {
     return this.authService.disable2fa(userId, body?.code);
+  }
+
+  // ========== TWO-FACTOR: AUTHENTICATOR APP (TOTP) ==========
+  // These two are authorised by the short-lived setup token minted at login,
+  // not by a session — the admin has no tokens until enrolment is confirmed.
+  @Post('2fa/totp/setup')
+  @UseGuards(TwoFactorSetupGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Start authenticator-app enrolment: returns the QR payload and manual-entry secret',
+  })
+  @ApiResponse({ status: 200, description: 'Pending secret created (not active yet)' })
+  @ApiResponse({ status: 401, description: 'Missing or expired setup token' })
+  async totpSetup(@CurrentUser('userId') userId: string) {
+    return this.authService.startTotpSetup(userId);
+  }
+
+  @Post('2fa/totp/enable')
+  @UseGuards(TwoFactorSetupGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Confirm enrolment with the first app code, then log in' })
+  @ApiResponse({ status: 200, description: 'Authenticator app active, session issued' })
+  @ApiResponse({ status: 401, description: 'Code does not match the pending secret' })
+  async totpEnable(
+    @CurrentUser('userId') userId: string,
+    @Body() body: { code: string },
+  ): Promise<AuthResponse> {
+    return this.authService.completeTotpSetup(userId, body?.code);
+  }
+
+  @Post('2fa/totp/disable')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Remove the authenticator app (app code or emailed fallback code)' })
+  @ApiResponse({ status: 200, description: 'Authenticator app removed' })
+  @ApiResponse({ status: 401, description: 'Invalid or expired code' })
+  async totpDisable(
+    @CurrentUser('userId') userId: string,
+    @Body() body: { code: string },
+  ) {
+    return this.authService.disableTotp(userId, body?.code);
   }
 
   @Post('reactivate-account/send-otp')

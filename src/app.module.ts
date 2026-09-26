@@ -37,7 +37,6 @@ import { CoinBattleModule } from './coin-battle/coin-battle.module';
 import { PuzzleModule } from './puzzle/puzzle.module';
 import { WordGameModule } from './word-game/word-game.module';
 import { WhotModule } from './whot/whot.module';
-import { ReportsModule } from './reports/reports.module';
 import { validateEnv } from './config/env.validation';
 
 @Module({
@@ -94,7 +93,6 @@ import { validateEnv } from './config/env.validation';
     PuzzleModule,
     WordGameModule,
     WhotModule,
-    ReportsModule,
   ],
 })
 export class AppModule {}

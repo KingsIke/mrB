@@ -10,6 +10,8 @@ export enum TokenType {
   ACCESS = 'access',
   REFRESH = 'refresh',
   PASSWORD_RESET = 'password-reset',
+  /** Short-lived proof that a password was just verified, used only to enrol an authenticator app. */
+  TWO_FACTOR_SETUP = '2fa-setup',
   /** Short-lived proof that the user was shown a treasure hunt on its screen. */
   TREASURE_CLAIM = 'treasure-claim',
 }

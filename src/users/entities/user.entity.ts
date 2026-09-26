@@ -31,6 +31,11 @@ export enum ProgramType {
   POSTGRADUATE = 'postgraduate',
 }
 
+export enum TwoFactorMethod {
+  EMAIL = 'email',
+  TOTP = 'totp',
+}
+
 export enum UserStatus {
   PENDING_VERIFICATION = 'pending_verification',
   PENDING_ONBOARDING = 'pending_onboarding',
@@ -251,6 +256,14 @@ profileFrame: string | null;
 
   @Column({ type: 'boolean', default: false })
   twoFactorEnabled: boolean;
+
+  /** Which second factor the user passes at login: the emailed code or the authenticator app. */
+  @Column({ type: 'varchar', length: 16, default: TwoFactorMethod.EMAIL })
+  twoFactorMethod: TwoFactorMethod;
+
+  /** Base32 TOTP shared secret. Only meaningful while twoFactorMethod is 'totp'. */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  twoFactorSecret: string | null;
 
   @Column({ type: 'boolean', default: false })
   "emailVerified": boolean;

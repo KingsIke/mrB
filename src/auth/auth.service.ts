@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
   InternalServerErrorException,
 } from "@nestjs/common";
@@ -37,6 +38,7 @@ import { AccountActionDto } from "../users/dto/account-action.dto";
 import {
   User,
   UserStatus,
+  TwoFactorMethod,
   OnboardingStep,
   VERIFICATION_GRACE_PERIOD_MS,
   VERIFICATION_GRACE_RESTRICT_REASON,
@@ -48,6 +50,7 @@ import { GroupsService } from "../groups/groups.service";
 import { RefreshTokenService } from "./refresh-token.service";
 import { AccountDeletionService } from "./account-deletion.service";
 import { TokenType, assertTokenType } from "./token-types";
+import { TotpService, TotpSetupPayload } from "./totp.service";
 
 export interface VerifyOtpResponse {
   message: string;
@@ -90,8 +93,18 @@ export interface AuthResponse {
 
 export interface TwoFactorRequiredInfo {
   twoFactorRequired: true;
+  /** Which second factor the user must supply: the authenticator app or the emailed code. */
+  method: TwoFactorMethod;
   email: string;
   userId: string;
+}
+
+export interface TwoFactorSetupRequiredInfo {
+  twoFactorSetupRequired: true;
+  email: string;
+  userId: string;
+  /** Short-lived JWT that authorises the enrolment endpoints (not a session). */
+  setupToken: string;
 }
 
 export interface DeactivatedAccountInfo {
@@ -123,6 +136,7 @@ export class AuthService {
     private readonly groupsService: GroupsService,
     private readonly refreshTokenService: RefreshTokenService,
     private readonly accountDeletionService: AccountDeletionService,
+    private readonly totpService: TotpService,
   ) {}
 
   // Helper function to extract School, Faculty, and Department details safely
@@ -274,7 +288,9 @@ export class AuthService {
   // ========== LOGIN ==========
   async login(
     loginDto: LoginDto,
-  ): Promise<AuthResponse | DeactivatedAccountInfo | TwoFactorRequiredInfo> {
+  ): Promise<
+    AuthResponse | DeactivatedAccountInfo | TwoFactorRequiredInfo | TwoFactorSetupRequiredInfo
+  > {
     const user = await this.usersService.findByEmail(loginDto.email);
     if (!user) {
       throw new UnauthorizedException("Invalid email or password");
@@ -323,12 +339,35 @@ export class AuthService {
       } as DeactivatedAccountInfo;
     }
 
-    // Two-factor authentication is enabled — require the emailed code
+    // Admin accounts must protect the dashboard with an authenticator app.
+    // Until that enrolment is confirmed they get a short-lived setup token
+    // instead of a session, so a stolen password alone never opens /admin.
+    if (this.isAdminEmail(user.email) && !this.hasTotpEnrolled(user)) {
+      return {
+        twoFactorSetupRequired: true,
+        email: user.email,
+        userId: user.id,
+        setupToken: this.issueSetupToken(user),
+      };
+    }
+
+    // Two-factor authentication is enabled — require the second factor
     // before issuing tokens.
     if (user.twoFactorEnabled) {
+      // Authenticator app: the code itself is checked at /auth/2fa/login-verify.
+      if (this.hasTotpEnrolled(user)) {
+        return {
+          twoFactorRequired: true,
+          method: TwoFactorMethod.TOTP,
+          email: user.email,
+          userId: user.id,
+        };
+      }
+
       await this.otpService.generateAndSendOtp(user, OtpPurpose.TWO_FACTOR_AUTH);
       return {
         twoFactorRequired: true,
+        method: TwoFactorMethod.EMAIL,
         email: user.email,
         userId: user.id,
       };
@@ -350,20 +389,214 @@ export class AuthService {
       throw new BadRequestException('Two-factor authentication is not enabled for this account');
     }
 
-    const isValid = await this.otpService.verifyOtp(
-      user.id,
-      verify2faDto.code,
-      OtpPurpose.TWO_FACTOR_AUTH,
-    );
-    if (!isValid) {
-      throw new UnauthorizedException('Invalid or expired verification code');
-    }
-
     if (user.status === UserStatus.BANNED) {
       throw new UnauthorizedException('This account has been banned.');
     }
 
+    this.assertTwoFactorNotLocked(user.email);
+
+    // Authenticator-app code first. The emailed code (requested from the
+    // login screen) stays usable as a fallback when the phone with the app
+    // is lost or unreachable.
+    const totpValid =
+      this.hasTotpEnrolled(user) &&
+      this.totpService.verify(verify2faDto.code, user.twoFactorSecret, user.email);
+
+    const emailValid =
+      !totpValid &&
+      (await this.otpService.verifyOtp(user.id, verify2faDto.code, OtpPurpose.TWO_FACTOR_AUTH));
+
+    if (!totpValid && !emailValid) {
+      this.recordTwoFactorFailure(user.email);
+      throw new UnauthorizedException('Invalid or expired verification code');
+    }
+
+    this.clearTwoFactorFailures(user.email);
     return this.buildAuthResponse(user);
+  }
+
+  // ========== AUTHENTICATOR APP (TOTP) ==========
+
+  /**
+   * `/auth/2fa/login-verify` only needs an email + code, so a 6-digit code
+   * would otherwise be guessable. Five wrong codes buy a 15-minute lockout
+   * for that account (in-memory; per-instance).
+   */
+  private static readonly TWO_FACTOR_MAX_FAILURES = 5;
+  private static readonly TWO_FACTOR_LOCK_MS = 15 * 60_000;
+  private readonly twoFactorFailures = new Map<
+    string,
+    { count: number; lockedUntil: number; lastAt: number }
+  >();
+
+  private assertTwoFactorNotLocked(email: string): void {
+    const record = this.twoFactorFailures.get(email.toLowerCase());
+    if (record && record.lockedUntil > Date.now()) {
+      const minutes = Math.max(1, Math.ceil((record.lockedUntil - Date.now()) / 60_000));
+      throw new UnauthorizedException(
+        `Too many incorrect codes. Try again in about ${minutes} minute${minutes === 1 ? '' : 's'}.`,
+      );
+    }
+  }
+
+  private recordTwoFactorFailure(email: string): void {
+    const key = email.toLowerCase();
+    const now = Date.now();
+    const record = this.twoFactorFailures.get(key) ?? {
+      count: 0,
+      lockedUntil: 0,
+      lastAt: now,
+    };
+    record.count += 1;
+    record.lastAt = now;
+    if (record.count >= AuthService.TWO_FACTOR_MAX_FAILURES) {
+      record.count = 0;
+      record.lockedUntil = now + AuthService.TWO_FACTOR_LOCK_MS;
+    }
+    this.twoFactorFailures.set(key, record);
+
+    if (this.twoFactorFailures.size > 500) {
+      for (const [staleKey, stale] of this.twoFactorFailures) {
+        if (stale.lastAt < now - AuthService.TWO_FACTOR_LOCK_MS) {
+          this.twoFactorFailures.delete(staleKey);
+        }
+      }
+    }
+  }
+
+  private clearTwoFactorFailures(email: string): void {
+    this.twoFactorFailures.delete(email.toLowerCase());
+  }
+
+  /** Emails listed in ADMIN_EMAILS — these accounts must use an authenticator app. */
+  private isAdminEmail(email?: string | null): boolean {
+    if (!email) return false;
+    const allowed = (process.env.ADMIN_EMAILS ?? '')
+      .split(',')
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean);
+    return allowed.includes(email.toLowerCase());
+  }
+
+  /** True once an admin has confirmed an authenticator app code. */
+  private hasTotpEnrolled(
+    user: User,
+  ): user is User & { twoFactorEnabled: true; twoFactorSecret: string } {
+    return Boolean(
+      user.twoFactorEnabled &&
+        user.twoFactorMethod === TwoFactorMethod.TOTP &&
+        user.twoFactorSecret,
+    );
+  }
+
+  /** Short-lived JWT that authorises enrolment only — never a session. */
+  private issueSetupToken(user: User): string {
+    return this.jwtService.sign(
+      {
+        sub: user.id,
+        email: user.email,
+        username: user.username,
+        type: TokenType.TWO_FACTOR_SETUP,
+      },
+      { expiresIn: this.configService.get('TWO_FACTOR_SETUP_EXPIRATION', '15m') },
+    );
+  }
+
+  private async requireAdminForTotp(userId: string): Promise<User> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (!this.isAdminEmail(user.email)) {
+      throw new ForbiddenException('Authenticator app setup is restricted to admin accounts');
+    }
+    return user;
+  }
+
+  /**
+   * Begin authenticator enrolment: generate and persist a pending secret and
+   * return everything needed to scan it. Nothing is active until the first
+   * code is confirmed through completeTotpSetup.
+   */
+  async startTotpSetup(userId: string): Promise<TotpSetupPayload> {
+    const user = await this.requireAdminForTotp(userId);
+    if (this.hasTotpEnrolled(user)) {
+      throw new BadRequestException('The authenticator app is already set up for this account');
+    }
+
+    // Reuse a secret that was generated but never confirmed, so refreshing
+    // the setup screen does not invalidate an already-scanned QR code.
+    const secret = user.twoFactorSecret ?? this.totpService.createSecret();
+    if (!user.twoFactorSecret) {
+      await this.usersService.update(user.id, { twoFactorSecret: secret });
+    }
+
+    const otpauthUrl = this.totpService.buildOtpauthUrl(user.email, secret);
+    return {
+      secret,
+      otpauthUrl,
+      qrCodeDataUrl: await this.totpService.qrCodeDataUrl(otpauthUrl),
+    };
+  }
+
+  /**
+   * Confirm enrolment with the first code shown by the app, then issue the
+   * normal login response so the admin lands in the dashboard without a
+   * second password prompt.
+   */
+  async completeTotpSetup(userId: string, code: string): Promise<AuthResponse> {
+    const user = await this.requireAdminForTotp(userId);
+    if (!user.twoFactorSecret) {
+      throw new BadRequestException('Start the authenticator setup before confirming a code');
+    }
+
+    this.assertTwoFactorNotLocked(user.email);
+    if (!this.totpService.verify(code, user.twoFactorSecret, user.email)) {
+      this.recordTwoFactorFailure(user.email);
+      throw new UnauthorizedException(
+        'That code does not match. Check your authenticator app and try again.',
+      );
+    }
+    this.clearTwoFactorFailures(user.email);
+
+    const updated = await this.usersService.update(user.id, {
+      twoFactorEnabled: true,
+      twoFactorMethod: TwoFactorMethod.TOTP,
+    });
+
+    return this.buildAuthResponse(updated);
+  }
+
+  /**
+   * Remove the authenticator app (accepts an app code or the emailed
+   * fallback code). Admins are pushed back into enrolment at their next
+   * login, so this only ever acts as a recovery step for them.
+   */
+  async disableTotp(userId: string, code: string): Promise<{ message: string }> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (user.twoFactorMethod !== TwoFactorMethod.TOTP || !user.twoFactorSecret) {
+      throw new BadRequestException('The authenticator app is not set up for this account');
+    }
+
+    const totpValid = this.totpService.verify(code, user.twoFactorSecret, user.email);
+    const emailValid =
+      !totpValid &&
+      (await this.otpService.verifyOtp(user.id, code, OtpPurpose.TWO_FACTOR_AUTH));
+
+    if (!totpValid && !emailValid) {
+      throw new UnauthorizedException('Invalid or expired verification code');
+    }
+
+    await this.usersService.update(user.id, {
+      twoFactorEnabled: false,
+      twoFactorMethod: TwoFactorMethod.EMAIL,
+      twoFactorSecret: null,
+    });
+
+    return { message: 'Authenticator app removed. You will set it up again at your next sign-in.' };
   }
 
   /**
@@ -1340,11 +1573,30 @@ export class AuthService {
       throw new UnauthorizedException('This account has been banned.');
     }
 
+    // Admin accounts must enrol an authenticator app before any session.
+    if (this.isAdminEmail(existingUser.email) && !this.hasTotpEnrolled(existingUser)) {
+      return {
+        twoFactorSetupRequired: true,
+        email: existingUser.email,
+        userId: existingUser.id,
+        setupToken: this.issueSetupToken(existingUser),
+      } as any;
+    }
+
     // Handle 2FA
     if (existingUser.twoFactorEnabled) {
+      if (this.hasTotpEnrolled(existingUser)) {
+        return {
+          twoFactorRequired: true,
+          method: TwoFactorMethod.TOTP,
+          email: existingUser.email,
+          userId: existingUser.id,
+        } as any;
+      }
       await this.otpService.generateAndSendOtp(existingUser, OtpPurpose.TWO_FACTOR_AUTH);
       return {
         twoFactorRequired: true,
+        method: TwoFactorMethod.EMAIL,
         email: existingUser.email,
         userId: existingUser.id,
       } as any;

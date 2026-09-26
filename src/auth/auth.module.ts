@@ -12,6 +12,8 @@ import { DepartmentsModule } from '../departments/departments.module';
 import { GamificationModule } from '../gamification/gamification.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { TwoFactorSetupGuard } from './guards/two-factor-setup.guard';
+import { TotpService } from './totp.service';
 import { SchoolsModule } from 'src/schools/schools.module';
 import { GroupsModule } from '../groups/groups.module';
 import { RefreshToken } from './entities/refresh-token.entity';
@@ -40,8 +42,16 @@ import { AccountDeletionService } from './account-deletion.service';
       }),
     }),
   ],
-  providers: [AuthService, RefreshTokenService, AccountDeletionService, JwtStrategy, JwtAuthGuard],
+  providers: [
+    AuthService,
+    RefreshTokenService,
+    AccountDeletionService,
+    TotpService,
+    JwtStrategy,
+    JwtAuthGuard,
+    TwoFactorSetupGuard,
+  ],
   controllers: [AuthController],
-  exports: [AuthService, RefreshTokenService, JwtAuthGuard],
+  exports: [AuthService, RefreshTokenService, JwtAuthGuard, TotpService],
 })
 export class AuthModule {}
